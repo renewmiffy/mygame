@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+
+body {
+  margin: 0;
+  overflow: hidden;
+  font-family: "微軟正黑體", "Microsoft JhengHei", sans-serif;
+}
+
+    #background {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;
+    }
+    #character {
+      position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); height: 60%;
+    }
+
+    .top-bar {
+      position: absolute; top: 0; left: 0; width: 100%;
+      background: rgba(255,255,255,0.6);
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 20px; z-index: 2; border-bottom: 1px solid #ccc;
+    }
+
+.top-left {
+  display: flex;
+  flex-direction: column;
+  font-size: 18px;  /* 玩家名和生日稍微大一點 */
+  color: #8b5e3c;
+  font-weight: bold;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.resources {
+  display: flex;
+  gap: 15px;
+  font-size: 16px;
+  color: #8b5e3c;
+  font-weight: bold;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+    .attributes {
+      display: flex; gap: 10px; margin-left: 20px;
+    }
+
+    .attribute {
+      position: relative;
+      width: 100px;
+      height: 16px;
+      background: #eee;
+      border-radius: 4px;
+    }
+
+    .fill {
+      height: 100%;
+      background: linear-gradient(90deg, #70c1ff, #4da8da);
+      border-radius: 4px;
+    }
+
+.attribute-label {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  font-size: 14px;
+  color: #8b5e3c;
+  font-weight: bold;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+    .gear {
+      font-size: 20px; cursor: pointer;
+    }
+
+    .bottom-bar {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 15px;
+    }
+
+    .bottom-item {
+      background: #fef9f4; border: 2px solid #d1cfc7; border-radius: 20px; width: 60px; height: 70px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.1); cursor: pointer;
+    }
+
+    .icon {
+      font-size: 24px;
+    }
+    .side-bar {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.5);
+  padding: 10px;
+  border-radius: 8px 0 0 8px;
+}
+
+.side-item {
+  cursor: pointer;
+  font-size: 14px;
+  padding: 8px;
+  background: #fef9f4;
+  border: 1px solid #d1cfc7;
+  border-radius: 4px;
+}
+.adventure-modal {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255,255,255,0.9);
+  border: 2px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  width: 80%;
+  max-width: 600px;
+  z-index: 10;
+}
+
+.adventure-content img {
+  width: 100%;
+  border-radius: 4px;
+}
+
+.adventure-text {
+  margin-top: 15px;
+  font-size: 16px;
+  color: #333;
+}
+
+.adventure-options {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.hidden {
+  display: none;
+}
+#side-panel {
+  position: fixed;
+  top: 80px;   /* 依照你的畫面可調 */
+  left: 0;
+  width: 220px;
+  background: rgba(255, 255, 255, 0.85);
+  border-right: 2px solid #ccc;
+  padding: 10px;
+  font-family: 'jf-openhuninn', sans-serif;
+  z-index: 10;
+}
+
+#side-panel h4 {
+  margin: 5px 0;
+  font-size: 16px;
+  border-bottom: 1px solid #999;
+  padding-bottom: 3px;
+}
+
+#status-box, #attributes-box {
+  margin-bottom: 20px;
+}
+
+.status-item {
+  margin: 5px 0;
+  font-size: 14px;
+}
+
+.status-detail {
+  font-size: 12px;
+  color: #666;
+  margin-left: 15px;
+}
+
+.attribute-item {
+  margin: 4px 0;
+  font-size: 14px;
+}
+#recent-log-box {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 420px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 2px solid #333;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  font-family: "微軟正黑體", sans-serif;
+  z-index: 999;
+}
+
+#recent-log-header {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-weight: bold;
+  background: #f9f9f9;
+  border-bottom: 1px solid #ccc;
+}
+
+#recent-log-content {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+#recent-log-content div {
+  border-bottom: 1px solid #ddd;
+  margin: 5px 0;
+  padding-bottom: 5px;
+}
+
+.hidden {
+  display: none;
+}
+
+.toast-box {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+.mission-item {
+  background: url('https://i.imgur.com/3G5eV1Q.png') no-repeat center center;  /* 任務卡背景圖片 */
+  background-size: cover;
+  padding: 10px 15px;
+  margin: 8px 0;
+  border-radius: 10px;
+  color: #333;
+  font-weight: bold;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mission-info {
+  flex-grow: 1;
+}
+
+.mission-reward {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+}
+
+.mission-btn {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.mission-btn.claim {
+  background: #ffd700;
+  color: #000;
+}
+
+.mission-btn.disabled {
+  background: #ccc;
+  color: #666;
+  cursor: not-allowed;
+}
+.mission-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  margin-top: 10px;
+}
+
+.mission-table th, .mission-table td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: center;
+}
+
+.mission-table th {
+  background-color: #f8f2e9;
+  color: #5c4033;
+}
+
+.mission-table td {
+  background-color: #fffdfa;
+}
+
+.mission-table .btn-claim {
+  background-color: #ffd700;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.mission-table .btn-disabled {
+  background-color: #ccc;
+  color: #666;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: not-allowed;
+}
+.daily-task-button {
+  background-color: #fff5e1;
+  border: 2px solid #e0c39c;
+  border-radius: 8px;
+  padding: 10px 15px;
+  margin: 6px;
+  font-size: 16px;
+  font-weight: bold;
+  color: #5c4033;
+  cursor: pointer;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+}
+.equip-item {
+  padding: 2px 4px;
+  font-weight: 500;
+}
+ 
+  </style>
+</head>
+
+<body>
+  <img id="background" src="">
+  <img id="character" src="">
+
+  <div class="top-bar">
+    <div class="top-left">
+      <div id="playerName">玩家名</div>
+      <div id="birthday">生日</div>
+    </div>
+
+    <div class="resources">
+      <div>💰 <span id="coins">0</span></div>
+      <div>⭐ <span id="honorPoints">0</span></div>
+      <div>AP: <span id="ap">0</span></div>
+    </div>
+
+   <div class="attributes">
+  <div class="attribute">
+    <div class="attribute-label" id="cleanliness-label">清潔度</div>
+    <div class="fill" id="cleanliness"></div>
+  </div>
+  <div class="attribute">
+    <div class="attribute-label" id="mood-label">心情</div>
+    <div class="fill" id="mood"></div>
+  </div>
+  <div class="attribute">
+    <div class="attribute-label" id="energy-label">精力</div>
+    <div class="fill" id="energy"></div>
+  </div>
+  <div class="attribute">
+    <div class="attribute-label" id="health-label">健康</div>
+    <div class="fill" id="health"></div>
+  </div>
+  <div class="attribute">
+    <div class="attribute-label" id="selfDiscipline-label">自律</div>
+    <div class="fill" id="selfDiscipline"></div>
+  </div>
+</div>
+
+<div id="side-panel">
+  <div id="status-box">
+    <h4>當前狀態</h4>
+    <div id="status-list">
+      <!-- 狀態項目由 JS 動態塞 -->
+    </div>
+  </div>
+
+  <div id="attributes-box">
+    <h4>屬性</h4>
+    <div id="attributes-list">
+      <!-- 屬性項目由 JS 動態塞 -->
+    </div>
+  </div>
+</div>
+
+    <div class="gear">⚙️</div>
+  </div>
+
+<div class="bottom-bar">
+<div class="bottom-item" onclick="openDailyModal()">
+  <img src="https://renewmiffy.github.io/mygame/img/icons/daily.webp" alt="日常" width="60">
+</div>
+  <div class="bottom-item" onclick="openStudy()"> <!-- 你之後的學習功能 -->
+    <img src="https://renewmiffy.github.io/mygame/img/icons/study.webp" alt="學習" width="60">
+  </div>
+  <div class="bottom-item" onclick="openAdventure()">
+    <img src="https://renewmiffy.github.io/mygame/img/icons/adventure.webp" alt="冒險" width="60">
+  </div>
+  <div class="bottom-item" onclick="openBag()"> <!-- 尚未實作 -->
+    <img src="https://renewmiffy.github.io/mygame/img/icons/bag.webp" alt="背包" width="60">
+  </div>
+  <div class="bottom-item" onclick="openShop()"> <!-- 尚未實作 -->
+    <img src="https://renewmiffy.github.io/mygame/img/icons/shop.webp" alt="商店" width="60">
+  </div>
+  <div class="bottom-item" onclick="openMissionModal()"> <!-- ✅ 修正後 -->
+    <img src="https://renewmiffy.github.io/mygame/img/icons/todo.webp" alt="任務" width="60">
+  </div>
+</div>
+
+  </div>
+  <div class="side-bar">
+    <div class="side-item">🎨 換裝</div>
+    <div class="side-item" onclick="openEquipmentModal()">🗡️ 裝備</div>
+    <div class="side-item">🏅 成就</div>
+    <div class="side-item">⚙️ 設定</div>
+  </div>
+
+  <!-- 冒險浮窗 -->
+  <div id="adventure-modal" class="adventure-modal hidden">
+    <div class="adventure-content">
+      <div class="adventure-text">你的眼前出現了一條岔路……</div>
+      <div class="adventure-options">
+<button onclick="chooseOption('left')">向左走</button>
+<button onclick="chooseOption('right')">向右走</button>
+<button onclick="chooseOption('home')">回家</button>
+      </div>
+    </div>
+  </div>
+  <!-- 右下角 最近紀錄 浮窗 -->
+<div id="recent-log-box">
+  <div id="recent-log-header" onclick="toggleRecentLog()">
+    📜 最近紀錄 <span id="recent-log-toggle">▼</span>
+  </div>
+  <div id="recent-log-content" class="hidden">
+    <!-- JS 會塞資料進來 -->
+  </div>
+</div>
+<!-- ✅ 問卷浮窗 -->
+<div id="survey-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3>每日問卷</h3>
+    <div id="survey-questions"></div>
+    <button onclick="submitSurvey()">送出問卷</button>
+  </div>
+</div>
+<div id="toast-container" class="toast-box"></div>
+
+
+<!-- ✅ 任務中心區塊 -->
+<div id="mission-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+
+  <div class="adventure-content">
+    <h3>📋 任務中心</h3>
+    <!-- 分頁標籤 -->
+    <div class="tabs">
+      <button class="tab-button active" onclick="switchMissionTab('daily')">📅 每日任務</button>
+      <button class="tab-button" onclick="switchMissionTab('achievement')">🏆 成就任務</button>
+    </div>
+
+    <!-- 任務內容 -->
+<div id="mission-list-container">
+  <div id="mission-list-daily" class="tab-content"></div>
+  <div id="mission-list-achievement" class="tab-content hidden"></div>
+</div>
+
+
+
+
+  </div>
+</div>
+<!-- 任務清單容器 -->
+<div id="mission-list-container">
+  <div id="mission-list-daily" class="tab-content"></div>
+  <div id="mission-list-achievement" class="tab-content hidden"></div>
+</div>
+<div id="daily-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+
+  <div class="adventure-content">
+    <h3>🧺 日常活動</h3>
+    <div id="daily-task-list">
+      <!-- 活動按鈕 JS 會動態產生 -->
+    </div>
+  </div>
+</div>
+<!-- 📖 學習浮窗 -->
+<div id="study-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3>📖 學習清單</h3>
+    <div id="study-list">載入中...</div>
+  </div>
+</div>
+<div id="equipment-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3>🗡️ 當前裝備</h3>
+    <div id="equipment-list">載入中...</div>
+    <h3>📊 裝備屬性加成</h3>
+    <div id="equipment-attributes">載入中...</div>
+  </div>
+</div>
+
+<div id="equip-selection-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute;top:10px;right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3>🔁 更換裝備：<span id="equip-slot-name"></span></h3>
+    <div id="equip-selection-list">載入中...</div>
+  </div>
+</div>
+<div id="loading-overlay" class="hidden">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">處理中，請稍候...</div>
+</div>
+<div id="bag-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3>🎒 我的背包</h3>
+    <div class="tabs">
+      <button class="tab-button active" onclick="switchBagTab('all')">全部</button>
+      <button class="tab-button" onclick="switchBagTab('equip')">裝備</button>
+      <button class="tab-button" onclick="switchBagTab('item')">道具</button>
+      <button class="tab-button" onclick="switchBagTab('ticket')">卷</button>
+    </div>
+    <div id="bag-list-all" class="tab-content"></div>
+    <div id="bag-list-equip" class="tab-content hidden"></div>
+    <div id="bag-list-item" class="tab-content hidden"></div>
+    <div id="bag-list-ticket" class="tab-content hidden"></div>
+  </div>
+</div>
+
+<!-- ✅ 說明浮窗 -->
+<div id="item-detail-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3 id="item-detail-name">物品名稱</h3>
+    <div id="item-detail-description">說明</div>
+    <div id="item-detail-effects" style="margin-top:10px; font-size:14px;"></div>
+  </div>
+</div>
+<!-- ✅ 販售確認 Modal -->
+<div id="confirm-sell-modal" class="adventure-modal hidden">
+  <div class="adventure-content">
+  <h3>💰 確定要販售？</h3>
+  <div id="confirm-sell-name" style="margin:8px 0;font-weight:bold;"></div>
+
+  <div style="margin:10px 0;">
+    數量：
+    <input type="number" id="confirm-sell-qty" min="1" value="1"
+           style="width:80px; text-align:center;">
+  </div>
+
+  <div style="margin-top:15px;display:flex;justify-content:center;gap:15px;">
+    <button onclick="confirmSell()">✅ 確定販售</button>
+    <button onclick="closeModal(this)">❌ 取消</button>
+  </div>
+</div>
+
+
+
+</body>
+<script>
+  // 頂層開始
+google.script.run
+  .withSuccessHandler(function(data) {
+    try {
+      console.log('✅ 後端回傳：', data);
+
+      if (data) {
+        document.getElementById('background').src = data.backgroundUrl || '';
+        document.getElementById('character').src = data.characterUrl || '';
+        document.getElementById('playerName').innerText = data.playerName || '玩家';
+        document.getElementById('birthday').innerText = "生日: " + (data.birthday || '未設定');
+        document.getElementById('coins').innerText = (data.coins !== undefined) ? data.coins : 0;
+        document.getElementById('honorPoints').innerText = (data.honorPoints !== undefined) ? data.honorPoints : 0;
+        document.getElementById('ap').innerText = (!isNaN(data.todayActionPoints)) ? data.todayActionPoints : 0;
+
+const setAttr = (id, value) => {
+  const num = parseFloat(value);
+  document.getElementById(id).style.width = (!isNaN(num) ? num : 0) + "%";
+  document.getElementById(`${id}-label`).innerText = `${getAttrLabel(id)} ${formatAttr(num)}/100`;
+};
+
+        const getAttrLabel = (id) => ({
+        cleanliness: "清潔度",
+        mood: "心情",
+        energy: "精力",
+        health: "健康",
+        selfDiscipline: "自律"   // ✅ 最後一項不必加逗號，其他必須有
+})[id];
+
+        ['cleanliness', 'mood', 'energy', 'health', 'selfDiscipline'].forEach(id => setAttr(id, data[id]));
+
+        if (!data.surveyFilledToday) {
+          openSurveyModal();
+        }
+         refreshSidePanel();
+      } else {
+        showToast("⚠️ 資料為空，請稍後再試");
+      }
+    } catch (err) {
+      console.error("🚨 渲染錯誤：", err);
+      showToast("❌ 渲染資料失敗：" + err.message);
+    } finally {
+
+    }
+  })
+  .withFailureHandler(function(error) {
+
+    console.error("❌ getProfileData() 錯誤：", error.message);
+    showToast("❌ 載入失敗：" + error.message);
+  })
+  .getProfileData();
+
+
+
+
+function openSurveyModal() {
+  document.getElementById('survey-modal').classList.remove('hidden');
+  google.script.run.withSuccessHandler(renderSurveyQuestions).getSurveyQuestions();
+}
+
+function renderSurveyQuestions(questions) {
+  const box = document.getElementById('survey-questions');
+  box.innerHTML = '';
+
+  questions.forEach(q => {
+    let html = `<div style="margin-bottom: 15px;"><strong>${q.Question}</strong><br/>`;
+
+    if (q.Type === 'YesNo') {
+      html += `
+        <label><input type="radio" name="${q.QKey}" value="1">是</label>
+        <label><input type="radio" name="${q.QKey}" value="0">否</label>
+      `;
+    } else if (q.Type === 'Number') {
+      html += `<input type="number" name="${q.QKey}" placeholder="請輸入數字" min="0">`;
+    } else if (q.Type === 'Select') {
+      try {
+        const options = JSON.parse(q.Options);
+        html += `<select name="${q.QKey}">`;
+        options.forEach(opt => {
+          html += `<option value="${opt}">${opt}</option>`;
+        });
+        html += `</select>`;
+      } catch (e) {
+        console.error('Options JSON 解析錯誤：', q.Options);
+      }
+    }
+
+    html += `</div>`;
+    box.innerHTML += html;
+  });
+}
+
+
+
+function submitSurvey() {
+  const inputs = document.querySelectorAll('#survey-questions input, #survey-questions select');
+  const formData = {};
+  inputs.forEach(input => {
+    if (input.type === 'radio') {
+      if (input.checked) {
+        formData[input.name] = input.value;
+      }
+    } else {
+      formData[input.name] = input.value;
+    }
+  });
+
+  console.log('表單送出：', formData);
+
+  google.script.run.withSuccessHandler(() => {
+    // ✅ 顯示成功訊息
+    showToast("✔️ 問卷已送出！");
+
+    // ✅ 關閉問卷 modal
+    document.getElementById('survey-modal').classList.add('hidden');
+
+    // ✅ 使用統一刷新方式更新所有畫面
+    refreshMainGameUI();
+
+  }).withFailureHandler(err => {
+    showToast("❌ 發送失敗：" + err.message);
+  }).handleSurvey(formData);
+}
+
+
+
+
+  function openAdventure() {
+    document.getElementById('adventure-modal').classList.remove('hidden');
+  }
+
+function chooseOption(option) {
+  if (option === 'home') {
+    showToast("你選擇了回家 🏠");
+    document.getElementById('adventure-modal').classList.add('hidden');
+  } else {
+    showToast("你選擇了：" + option + "，冒險還沒結束！");
+    // 這裡可以接續下一段冒險情節
+  }
+}
+
+  
+function toggleRecentLog() {
+  const content = document.getElementById('recent-log-content');
+  const toggle = document.getElementById('recent-log-toggle');
+
+  const isHidden = content.classList.contains('hidden');
+  content.classList.toggle('hidden');
+  toggle.innerText = isHidden ? '▲' : '▼';
+
+  if (isHidden) {
+    console.log('[toggleRecentLog] 展開最近紀錄 ➜ 觸發 refreshRecentLog()');
+    refreshRecentLog();
+  }
+}
+
+
+
+function loadRecentLog() {
+  google.script.run.withSuccessHandler(function(logs) {
+    console.log("後端實際回傳：", logs);
+    renderRecentLog(logs);
+  }).getRecentLogs();
+}
+
+function renderRecentLog(logs) {
+  const content = document.getElementById('recent-log-content');
+
+  if (!logs || logs.length === 0) {
+    content.innerHTML = `<div>沒有最近紀錄。</div>`;
+  } else {
+    content.innerHTML = logs.map(log => {
+      let detail = '';
+
+      if (log.Type === 'action') {
+        const prefix = log.AffectValue > 0 ? '+' : ''; // 自動補 +
+        detail = `行動 ➜ ${log.ActionName} (${mapFieldToName(log.AffectField)} ${prefix}${log.AffectValue})`;
+      } else if (log.Type === 'reward' || log.Type === 'audit') {
+        detail = `獎勵 ➜ ${log.RewardType || ''} ${log.RewardAmount || ''}`;
+      } else {
+        detail = `🗂️ ${log.Type || ''}`;
+      }
+
+      return `<div style="border-bottom:1px solid #ddd;padding:5px 0;">
+        <strong>${log.CreatedAt}</strong> — ${detail}
+      </div>`;
+    }).join('');
+  }
+}
+function formatAttr(val) {
+  return Math.round(parseFloat(val) || 0);
+}
+
+function showToast(message, duration = 3000) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.innerText = message;
+
+  toast.style.cssText = `
+    background: rgba(60, 60, 60, 0.9);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 16px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    animation: fadeInOut ${duration / 1000 + 0.5}s ease forwards;
+  `;
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.remove();
+  }, duration);
+}
+
+const style = document.createElement('style');
+style.innerHTML = `
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(10px); }
+  10% { opacity: 1; transform: translateY(0); }
+  90% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-10px); }
+}`;
+document.head.appendChild(style);
+function openMissionModal() {
+  document.getElementById('mission-modal').classList.remove('hidden');
+
+  google.script.run.withSuccessHandler(renderMissionList).getMissionList(); // 你之後要自己實作這個
+}
+
+function renderMissionList(missions) {
+  const dailyBox = document.getElementById('mission-list-daily');
+  const achievementBox = document.getElementById('mission-list-achievement');
+
+  dailyBox.innerHTML = '';  // 清空
+  achievementBox.innerHTML = '';
+
+  const renderTable = (targetBox, filteredMissions, claimAllFn) => {
+    if (!filteredMissions.length) {
+      targetBox.innerHTML = '<div>目前沒有任務</div>';
+      return;
+    }
+
+    let html = `<table class="mission-table">
+      <thead>
+        <tr><th>📌 任務名稱</th><th>🧾 說明</th><th>🎁 獎勵</th><th>✅ 狀態</th><th>操作</th></tr>
+      </thead><tbody>`;
+
+    filteredMissions.forEach(m => {
+      let statusText = '';
+      let button = '';
+
+      if (m.claimed) {
+        statusText = "✅ 已領取";
+        button = `<button class="btn-disabled">已領取</button>`;
+      } else if (m.fulfilled) {
+        statusText = "✅ 已完成";
+        button = `<button class="btn-claim" onclick="claimDailyTask('${m.id}')">領取</button>`;
+      } else {
+        statusText = "⏳ 未完成";
+        button = `<button class="btn-disabled">尚未完成</button>`;
+      }
+
+      html += `<tr>
+        <td>${m.name}</td>
+        <td>${m.description}</td>
+        <td>${
+  (m.rewardText || '')
+    .replace(/\+(\d+)\s(\w+)/g, (_, val, field) => `+${val} ${mapFieldToName(field)}`)
+}</td>
+
+        <td>${statusText}</td>
+        <td>${button}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table>
+      </div>`;
+
+    targetBox.innerHTML = html;
+  };
+
+  renderTable(dailyBox, missions.filter(m => m.id.startsWith("D")), "claimAllDailyTasks()");
+  renderTable(achievementBox, missions.filter(m => !m.id.startsWith("D")), "claimAllAchievementTasks()");
+}
+
+
+function switchMissionTab(tab) {
+  const dailyTab = document.getElementById('mission-list-daily');
+  const achTab = document.getElementById('mission-list-achievement');
+  const buttons = document.querySelectorAll('.tab-button');
+
+  buttons.forEach(btn => btn.classList.remove('active'));
+  if (tab === 'daily') {
+    dailyTab.classList.remove('hidden');
+    achTab.classList.add('hidden');
+    buttons[0].classList.add('active');
+  } else {
+    achTab.classList.remove('hidden');
+    dailyTab.classList.add('hidden');
+    buttons[1].classList.add('active');
+  }
+}
+function openDailyModal() {
+  document.getElementById('daily-modal').classList.remove('hidden');
+
+  google.script.run
+    .withSuccessHandler(renderDailyTaskButtons)
+    .getDailyTaskList();
+}
+
+function performDailyTask(taskId) {
+google.script.run
+  .withSuccessHandler(() => {
+    showToast("✅ 任務完成！");
+    refreshMainGameUI();
+    openDailyModal();
+  })
+    .withFailureHandler(err => {
+      showToast("❌ 錯誤：" + err.message);
+    })
+    .doDailyTask(taskId);
+}
+function renderDailyTaskButtons(tasks) {
+  const container = document.getElementById('daily-task-list');
+  container.innerHTML = '';
+
+  tasks.forEach(task => {
+    const btn = document.createElement('button');
+    btn.className = 'daily-task-button';
+    btn.innerText = task.name;
+
+    // 先預設啟用（會在 getDailyTaskList() 裡加 fulfilled 欄位才可判斷）
+    btn.disabled = task.fulfilledToday === true;
+    if (btn.disabled) {
+      btn.style.opacity = '0.5';
+      btn.style.cursor = 'not-allowed';
+    }
+
+    btn.onclick = () => {
+      if (btn.disabled) return;
+      google.script.run
+        .withSuccessHandler(() => {
+          showToast("✅ 任務完成！");
+          refreshMainGameUI();
+          openDailyModal(); // 重新刷新按鈕狀態
+        })
+        .withFailureHandler(err => {
+          showToast("❌ 錯誤：" + err.message);
+        })
+        .doDailyTask(task.id);
+    };
+
+    container.appendChild(btn);
+  });
+}
+function closeModal(button) {
+  const modal = button.closest('.adventure-modal');
+  if (modal) modal.classList.add('hidden');
+}
+function openStudy() {
+  document.getElementById('study-modal').classList.remove('hidden');
+  loadStudyList(true); // ✅ 顯示載入中
+}
+
+function refreshLearningList() {
+  loadStudyList(false); // ✅ 不顯示載入中，避免畫面閃爍
+}
+
+function loadStudyList(showLoading = true) {
+  const list = document.getElementById("study-list");
+  if (showLoading) {
+    list.innerHTML = '載入中...';
+  }
+
+  const todayStr = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+
+  google.script.run.withSuccessHandler(function(skills) {
+    list.innerHTML = '';
+    skills.forEach(skill => {
+      const btn = document.createElement("button");
+      btn.className = "daily-task-button";
+      btn.innerText = skill.SkillName;
+
+      if (skill.LastDoneDate === todayStr) {
+        btn.disabled = true;
+        btn.style.opacity = "0.5";
+        btn.style.cursor = "not-allowed";
+        btn.title = "今天已學過";
+      } else {
+        btn.onclick = () => {
+          google.script.run
+            .withSuccessHandler(() => {
+              showToast(`🎓 學習 ${skill.SkillName} 完成`);
+              refreshMainGameUI();
+              refreshLearningList(); // 👇 不會再看到「載入中...」
+            })
+            .withFailureHandler(err => {
+              showToast("❌ 錯誤：" + err.message);
+            })
+            .doLearning(skill.SkillID);
+        };
+      }
+
+      list.appendChild(btn);
+    });
+  }).getAllSkills();
+}
+
+
+function claimDailyTask(missionId) {
+  google.script.run
+    .withSuccessHandler(msg => {
+      showToast(msg);
+
+      // ✅ 延遲刷新，避免寫入未完成就抓資料
+      setTimeout(() => {
+        refreshMainGameUI();   // 更新畫面所有狀態
+        openMissionModal();     // 重新載入任務狀態（含已領取）
+      }, 500);  // 可調整延遲毫秒
+    })
+    .withFailureHandler(err => {
+      showToast("❌ 錯誤：" + err.message);
+    })
+    .claimDailyTask(missionId);
+}
+function openEquipmentModal() {
+  document.getElementById('equipment-modal').classList.remove('hidden');
+  document.getElementById('equipment-list').innerText = '載入中...';
+  document.getElementById('equipment-attributes').innerText = '載入中...';
+
+  google.script.run.withSuccessHandler(renderEquipmentInfo).getEquippedInfo();
+}
+
+function renderEquipmentInfo(data) {
+  const listBox = document.getElementById('equipment-list');
+  const attrBox = document.getElementById('equipment-attributes');
+
+  // 顯示裝備欄
+listBox.innerHTML = Object.entries(data.equipped || {}).map(([slot, name]) =>
+  `<div class="equip-item" style="color:blue;cursor:pointer;" onclick="openEquipSelection('${slot}')">
+    ${data.slotNames?.[slot] || slot}：${name || '空'}
+  </div>`
+).join('');
+
+
+
+
+
+  const attrIcons = {
+    HP: "❤️", MP: "💧", PhysicalAttack: "⚔️", PhysicalDefense: "🛡️",
+    MagicAttack: "🔥", MagicDefense: "🔰", Agility: "🏃", Accuracy: "🎯",
+    Evasion: "🌀", CriticalRate: "💥", CriticalDamage: "🔪", Luck: "🍀", Resistance: "🛡"
+  };
+
+  const fallbackAttrNames = {
+    HP: "生命值", MP: "魔力值",
+    PhysicalAttack: "物理攻擊", PhysicalDefense: "物理防禦",
+    MagicAttack: "魔法攻擊", MagicDefense: "魔法防禦",
+    Agility: "敏捷", Accuracy: "命中",
+    Evasion: "閃避", CriticalRate: "暴擊率",
+    CriticalDamage: "暴擊傷害", Luck: "幸運", Resistance: "抗性"
+  };
+
+const attributeDisplayOrder = [
+  "HP", "MP",
+  "PhysicalAttack", "MagicAttack", "PhysicalDefense", "MagicDefense",
+  "Agility", "Accuracy", "Evasion",
+  "CriticalRate", "CriticalDamage",
+  "Luck", "Resistance"
+];
+
+const lines = attributeDisplayOrder.map(key => {
+  const obj = data.attributes?.[key];
+  if (!obj) return '';  // 忽略不存在的屬性（例如尚未初始化）
+
+  const base = Math.round(parseFloat(obj.base) || 0);
+  const equip = Math.round(parseFloat(obj.equip) || 0);
+  const bonus = Math.round(parseFloat(obj.bonus) || 0);
+  const final = Math.round(parseFloat(obj.final) || 0);
+
+  const icon = attrIcons[key] || '';
+  const label = data.attrNames?.[key] || fallbackAttrNames[key] || key;
+
+  let display = `<strong>${base}</strong>`;
+  if (equip || bonus) {
+    if (equip) display += ` + <span style="color:green;">${equip}</span>`;
+    if (bonus) display += ` + <span style="color:blue;">${bonus}</span>`;
+    display += ` = <strong>${final}</strong>`;
+  }
+
+  return `<div style="margin-bottom:4px;">${icon} <strong>${label}</strong>：${display}</div>`;
+});
+
+  attrBox.innerHTML = `<div style="font-size:14px;">${lines.join('')}</div>`;
+}
+
+
+
+
+function getSlotIcon(slot) {
+  const icons = {
+    Head: '🎽', Body: '🧥', Gloves: '🧤', Belt: '🧷', Shoes: '👟',
+    Accessory: '💍', Weapon: '🗡️'
+  };
+  return icons[slot] || '🎒';
+}
+
+function openEquipSelection(slot) {
+  document.getElementById('equipment-modal').classList.remove('hidden');
+  document.getElementById('equipment-list').innerText = '載入中...';
+  
+  google.script.run.withSuccessHandler(data => {
+    const listBox = document.getElementById('equipment-list');
+    const attrBox = document.getElementById('equipment-attributes');
+    const items = data.candidates || [];
+
+    let html = `<div class="equip-choice" style="color:red;cursor:pointer;" onclick="unequipItem('${slot}')">🔓 卸下裝備</div>`;
+
+    const boostFields = [
+      { key: 'HPBoost', label: '生命' },
+      { key: 'MPBoost', label: '魔力' },
+      { key: 'AttackBoost', label: '攻' },
+      { key: 'DefenseBoost', label: '防' },
+      { key: 'MagicAttackBoost', label: '魔攻' },
+      { key: 'MagicDefenseBoost', label: '魔防' },
+      { key: 'AgilityBoost', label: '敏' },
+      { key: 'AccuracyBoost', label: '命中' },
+      { key: 'EvasionBoost', label: '閃避' },
+      { key: 'CriticalRateBoost', label: '爆率' },
+      { key: 'CriticalDamageBoost', label: '爆傷' },
+      { key: 'LuckBoost', label: '幸運' },
+      { key: 'ResistanceBoost', label: '抗性' }
+    ];
+
+    if (items.length) {
+      html += items.map(e => {
+  const bonusText = boostFields
+    .map(({ key, label }) => {
+      const val = parseFloat(e[key]) || 0;
+      return val !== 0 ? `+${val}${label}` : '';
+    })
+    .filter(txt => txt !== '')
+    .join(' ');
+
+  return `
+    <div class="equip-choice" style="cursor:pointer;" onclick="confirmEquip('${slot}', '${e.EquipmentID}')">
+      ${e.Name}${bonusText ? ` (${bonusText})` : ''}
+    </div>
+  `;
+}).join('');
+
+    } else {
+      html += '<div>⚠️ 沒有可用裝備</div>';
+    }
+
+    listBox.innerHTML = html;
+    attrBox.innerHTML = '<div style="text-align:center;">請選擇裝備以檢視屬性。</div>';
+  }).getAvailableEquipments(slot);
+}
+
+
+
+
+
+function confirmEquip(slot, equipmentID) {
+  google.script.run
+    .withSuccessHandler(() => {
+      showToast("✅ 裝備已更換！");
+      closeModal(document.getElementById("equip-selection-modal"));
+      openEquipmentModal();  // 🔁 只更新裝備視窗即可
+    })
+    .equipItem(slot, equipmentID);
+}
+
+
+function refreshHeaderBar() {
+  google.script.run
+    .withSuccessHandler(data => {
+      console.log("🔄 refreshHeaderBar:", data);  // ✅ 除錯用
+
+      document.getElementById('ap').innerText = Math.floor(data.TodayActionPoints || 0);
+      document.getElementById('coins').innerText = data.Coins;
+      document.getElementById('honorPoints').innerText = data.HonorPoints;
+
+      // ✅ 對應 QuickStatus 傳回的是 Cleanliness, Mood 等 ➜ 要轉成對應的 ID
+      const fieldToIdMap = {
+        Cleanliness: 'cleanliness',
+        Mood: 'mood',
+        Energy: 'energy',
+        Health: 'health',
+        SelfDiscipline: 'selfDiscipline'
+      };
+
+      Object.entries(fieldToIdMap).forEach(([field, id]) => {
+        const num = Number(data[field]) || 0;
+        const bar = document.getElementById(id);
+        const label = document.getElementById(`${id}-label`);
+        if (bar) bar.style.width = `${num}%`;
+        if (label) {
+          const zh = {
+            cleanliness: "清潔度",
+            mood: "心情",
+            energy: "精力",
+            health: "健康",
+            selfDiscipline: "自律"
+          }[id];
+          label.innerText = `${zh} ${Math.round(num)}/100`;
+        }
+      });
+    })
+    .withFailureHandler(err => {
+      console.error("❌ refreshHeaderBar 失敗：", err.message);
+      showToast("❌ 資料更新失敗：" + err.message);
+    })
+    .getQuickStatus();
+}
+
+
+function refreshSidePanel() {
+  google.script.run.withSuccessHandler(function(data) {
+    const attrBox = document.getElementById('attributes-list');
+    attrBox.innerHTML = `
+      <div class="attribute-item">📚 智力 Lv.${data.IntelligenceLevel} ➜ ${Math.round(data.Intelligence)}</div>
+      <div class="attribute-item">🏃 體力 Lv.${data.PhysicalLevel} ➜ ${Math.round(data.Physical)}</div>
+      <div class="attribute-item">🎨 創造 Lv.${data.CreativityLevel} ➜ ${Math.round(data.Creativity)}</div>
+      <div class="attribute-item">💖 感受 Lv.${data.SensitivityLevel} ➜ ${Math.round(data.Sensitivity)}</div>
+      <div class="attribute-item">🗣️ 氣質 Lv.${data.GraceLevel} ➜ ${Math.round(data.Grace)}</div>
+    `;
+
+    const statusBox = document.getElementById('status-list');
+    statusBox.innerHTML = (data.StatusList.length > 0)
+      ? data.StatusList.map(s => `<div class="status-item">⚠️ ${s.StatusName}<div class="status-detail">${s.Effect}</div></div>`).join('')
+      : `<div class="status-item">🟢 無異常狀態</div>`;
+  }).getQuickStatus();
+}
+function refreshMainGameUI() {
+  refreshHeaderBar();
+  refreshSidePanel();
+  const content = document.getElementById('recent-log-content');
+  if (!content.classList.contains('hidden')) {
+    refreshRecentLog();
+  }
+}
+function refreshRecentLog() {
+  google.script.run
+    .withSuccessHandler(renderRecentLog)
+    .withFailureHandler(err => {
+      console.error("❌ 讀取最近紀錄失敗：", err.message);
+      showToast("❌ 無法載入最近紀錄：" + err.message);
+    })
+    .getRecentLogs();
+}
+let FIELD_MAP = {};  // 全域欄位對照表（英文 ➜ 中文）
+
+function openBag() {
+  document.getElementById('bag-modal').classList.remove('hidden');
+
+  // 先載入欄位對照表 ➜ 再載入背包內容
+  google.script.run.withSuccessHandler(function(map) {
+    FIELD_MAP = map;
+
+    // 再載入道具
+    google.script.run
+      .withSuccessHandler(renderBagItems)
+      .getInventory();
+
+  }).getFieldMapping();
+}
+
+function switchBagTab(tab) {
+  const tabs = ['all', 'equip', 'item', 'ticket'];
+  tabs.forEach(t => {
+    document.getElementById('bag-list-' + t).classList.toggle('hidden', t !== tab);
+  });
+  document.querySelectorAll('#bag-modal .tab-button').forEach((btn, idx) => {
+    btn.classList.toggle('active', tabs[idx] === tab);
+  });
+}
+
+function renderBagItems(items) {
+  const group = { all: [], equip: [], item: [], ticket: [] };
+
+  items.forEach(i => {
+    const type = (i.ItemType || '').toLowerCase();
+    const icon = getItemIcon(type);
+    const label = `${icon} ${i.ItemName} x${i.Count}`;
+    const showDetail = `showItemDetail(${JSON.stringify(i).replace(/"/g, '&quot;')})`;
+
+    const canSell = items.filter(x => x.ItemID === i.ItemID).length > 1 || i.Equipped !== true;
+
+    const safeItemName = JSON.stringify(i.ItemName);
+// ③ renderBagItems() 中的販售按鈕改為帶 count
+const sellBtn = canSell
+  ? `<button onclick="showSellModal('${i.ItemID}',
+        decodeURIComponent('${encodeURIComponent(i.ItemName)}'),
+        ${i.Count})">販售</button>`
+  : `<button class="btn-disabled" disabled>無法販售</button>`;
+
+
+
+
+    const actionBtn = (type === 'equip')
+      ? `<button onclick="equipItem('${i.Slot}', '${i.ItemID}')">裝備</button>`
+      : `<button onclick="useItem('${i.ItemID}')">使用</button>`;
+
+    const html = `
+      <div style="border:1px solid #ccc; border-radius:6px; padding:6px; margin:6px 0; background:#fffdf9;">
+        <strong style="cursor:pointer;" onclick="${showDetail}">${label}</strong><br/>
+        ${actionBtn} ${sellBtn}
+      </div>`;
+
+    group.all.push(html);
+    if (type === 'equip') group.equip.push(html);
+    else if (type.includes('ticket')) group.ticket.push(html);
+    else group.item.push(html);
+  });
+
+  ['all', 'equip', 'item', 'ticket'].forEach(t => {
+    document.getElementById('bag-list-' + t).innerHTML = group[t].join('') || '<div>目前沒有物品</div>';
+  });
+}
+
+
+
+function getItemIcon(type) {
+  return {
+    equip: '🗡️', item: '🧃', ticket: '🎟️'
+  }[type] || '🎒';
+}
+
+function showItemDetail(item) {
+  document.getElementById('item-detail-name').innerText = `${item.ItemName}`;
+  document.getElementById('item-detail-description').innerText = item.Description || '無說明';
+
+  const effectLines = parseEffects(item.Effect);
+  let effectHtml = effectLines.length
+    ? '<ul>' + effectLines.map(l => `<li>${l}</li>`).join('') + '</ul>'
+    : '無效果';
+
+  // 加入販售金額顯示
+  if (item.SellPrice > 0) {
+    effectHtml += `<div style="margin-top:10px;color:#8b5e3c;">💰 可販售金幣：${item.SellPrice}</div>`;
+  } else if (item.HonorSellPrice > 0) {
+    effectHtml += `<div style="margin-top:10px;color:#8b5e3c;">⭐ 可販售榮譽點數：${item.HonorSellPrice}</div>`;
+  }
+
+  document.getElementById('item-detail-effects').innerHTML = effectHtml;
+  document.getElementById('item-detail-modal').classList.remove('hidden');
+}
+
+function parseEffects(effectStr) {
+  if (!effectStr) return [];
+  try {
+    return effectStr.split(',').map(pair => {
+      const [field, value] = pair.split('+');
+      return `${mapFieldToName(field)} +${value}`;
+    });
+  } catch (e) {
+    return ['❌ 效果解析錯誤'];
+  }
+}
+
+function mapFieldToName(field) {
+  return FIELD_MAP?.[field] || field;
+}
+
+function useItem(itemID) {
+  if (!confirm("確定要使用這個道具嗎？")) return;
+  google.script.run
+    .withSuccessHandler(() => {
+      showToast("✅ 使用成功！");
+      refreshMainGameUI();
+      openBag(); // 重新刷新背包
+    })
+    .withFailureHandler(err => {
+      showToast("❌ 錯誤：" + err.message);
+    })
+    .useItem(itemID);
+}
+
+
+let pendingSellItemID  = null;
+let pendingSellMax     = 1;        // 可賣上限
+
+// ① 打開 modal 時帶入 maxCount
+function showSellModal(itemID, itemName, maxCount) {
+  pendingSellItemID = itemID;
+  pendingSellMax    = maxCount;
+  document.getElementById('confirm-sell-name').innerText = itemName;
+  const qtyInput = document.getElementById('confirm-sell-qty');
+  qtyInput.max   = maxCount;
+  qtyInput.value = 1;
+  document.getElementById('confirm-sell-modal').classList.remove('hidden');
+}
+
+// ② 送出時把數量一併傳到後端
+function confirmSell() {
+  if (!pendingSellItemID) return;
+  const qty = Math.min(
+      pendingSellMax,
+      Math.max(1, parseInt(document.getElementById('confirm-sell-qty').value) || 1)
+  );
+  const itemID = pendingSellItemID;
+  pendingSellItemID = null;
+
+  closeModal(document.getElementById('confirm-sell-modal'));
+
+  google.script.run
+    .withSuccessHandler(msg => {
+      showToast(msg || "✅ 已販售！");
+      refreshCoinsAndHonor();
+      refreshRecentLog();
+      openBag();
+    })
+    .withFailureHandler(err => showToast(err.message || "❌ 失敗：" + err.message))
+    .sellItem(itemID, qty);                 // ← 傳 qty
+}
+
+
+function refreshCoinsAndHonor() {
+  google.script.run.withSuccessHandler(data => {
+    if (data) {
+      if (data.Coins !== undefined) {
+        document.getElementById('coins').innerText = data.Coins;
+      }
+      if (data.HonorPoints !== undefined) {
+        document.getElementById('honorPoints').innerText = data.HonorPoints;
+      }
+    }
+  }).withFailureHandler(err => {
+    console.error("❌ refreshCoinsAndHonor 失敗：", err.message);
+    showToast("❌ 金幣/榮譽點更新失敗：" + err.message);
+  }).getQuickStatus();
+}
+function unequipItem(slot) {
+  google.script.run.withSuccessHandler(() => {
+    showToast("✅ 已卸下裝備！");
+    closeModal(document.getElementById("equipment-modal"));
+    refreshMainGameUI(); // 若你 UI 有寫這個
+  }).unequip(slot);
+}
+function equipItem(slot, equipmentID) {
+  if (!confirm("要裝備這個裝備嗎？")) return;
+  google.script.run
+    .withSuccessHandler(() => {
+      showToast("🗡️ 裝備成功！");
+      refreshMainGameUI();
+      openBag();
+    })
+    .withFailureHandler(err => {
+      showToast("❌ 裝備失敗：" + err.message);
+    })
+    .equipItem(slot, equipmentID);
+}
+
+
+
+
+
+
+
+</script>
+
+</html>
+
