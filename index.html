@@ -367,10 +367,6 @@ body {
   transform: none;
   box-shadow: none;
 }
-.equip-item {
-  padding: 2px 4px;
-  font-weight: 500;
-}
 .adventure-modal.hidden {
   display: none;
 }
@@ -443,9 +439,6 @@ body {
   <div class="bottom-item" onclick="openStudy()"> <!-- 你之後的學習功能 -->
     <img src="https://renewmiffy.github.io/mygame/img/icons/study.webp" alt="學習" width="60">
   </div>
-  <div class="bottom-item" onclick="openAdventure()">
-    <img src="https://renewmiffy.github.io/mygame/img/icons/adventure.webp" alt="冒險" width="60">
-  </div>
   <div class="bottom-item" onclick="openBag()"> <!-- 尚未實作 -->
     <img src="https://renewmiffy.github.io/mygame/img/icons/bag.webp" alt="背包" width="60">
   </div>
@@ -460,21 +453,8 @@ body {
   </div>
   <div class="side-bar">
     <div class="side-item">🎨 換裝</div>
-    <div class="side-item" onclick="openEquipmentModal()">🗡️ 裝備</div>
     <div class="side-item">🏅 成就</div>
     <div class="side-item">⚙️ 設定</div>
-  </div>
-
-  <!-- 冒險浮窗 -->
-  <div id="adventure-modal" class="adventure-modal hidden">
-    <div class="adventure-content">
-      <div class="adventure-text">你的眼前出現了一條岔路……</div>
-      <div class="adventure-options">
-<button onclick="chooseOption('left')">向左走</button>
-<button onclick="chooseOption('right')">向右走</button>
-<button onclick="chooseOption('home')">回家</button>
-      </div>
-    </div>
   </div>
   <!-- 右下角 最近紀錄 浮窗 -->
 <div id="recent-log-box">
@@ -555,12 +535,10 @@ body {
     <h3>🎒 我的背包</h3>
     <div class="tabs">
       <button class="tab-button active" onclick="switchBagTab('all')">全部</button>
-      <button class="tab-button" onclick="switchBagTab('equip')">裝備</button>
       <button class="tab-button" onclick="switchBagTab('item')">道具</button>
       <button class="tab-button" onclick="switchBagTab('ticket')">卷</button>
     </div>
     <div id="bag-list-all" class="tab-content"></div>
-    <div id="bag-list-equip" class="tab-content hidden"></div>
     <div id="bag-list-item" class="tab-content hidden"></div>
     <div id="bag-list-ticket" class="tab-content hidden"></div>
   </div>
@@ -590,27 +568,6 @@ body {
   <div style="margin-top:15px;display:flex;justify-content:center;gap:15px;">
     <button onclick="confirmSell()">✅ 確定販售</button>
     <button onclick="closeModal(this)">❌ 取消</button>
-  </div>
-</div>
-<!-- ✅ 裝備頁面 -->
-<div id="equipment-modal" class="adventure-modal hidden">
-  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
-  <div class="adventure-content">
-    <h3>🛡️ 角色裝備</h3>
-    <div id="equipment-panel">
-      <!-- 將顯示目前已裝備內容 -->
-    </div>
-  </div>
-</div>
-
-
-
-<div id="equip-selection-modal" class="adventure-modal hidden">
-  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
-  <div class="adventure-content">
-    <h3 id="equip-modal-title">選擇裝備</h3>
-    <div id="current-equip-info" style="margin-bottom:10px;"></div>
-    <div id="equip-options-list" style="max-height:250px; overflow-y:auto;"></div>
   </div>
 </div>
 
@@ -742,21 +699,6 @@ function submitSurvey() {
 }
 
 
-
-
-  function openAdventure() {
-    document.getElementById('adventure-modal').classList.remove('hidden');
-  }
-
-function chooseOption(option) {
-  if (option === 'home') {
-    showToast("你選擇了回家 🏠");
-    document.getElementById('adventure-modal').classList.add('hidden');
-  } else {
-    showToast("你選擇了：" + option + "，冒險還沒結束！");
-    // 這裡可以接續下一段冒險情節
-  }
-}
 
   
 function toggleRecentLog() {
@@ -1141,7 +1083,7 @@ function openBag() {
 }
 
 function switchBagTab(tab) {
-  const tabs = ['all', 'equip', 'item', 'ticket'];
+  const tabs = ['all', 'item', 'ticket'];
   tabs.forEach(t => {
     document.getElementById('bag-list-' + t).classList.toggle('hidden', t !== tab);
   });
@@ -1184,17 +1126,13 @@ function renderBagItems(items) {
     document.getElementById('bag-list-' + t).innerHTML = group[t].join('') || '<div>目前沒有物品</div>';
   });
 
-  // 裝備頁清空
-  document.getElementById('bag-list-equip').innerHTML = '<div>（已移除裝備功能）</div>';
 }
 
 
 
 
 function getItemIcon(type) {
-  return {
-    equip: '🗡️', item: '🧃', ticket: '🎟️'
-  }[type] || '🎒';
+  return { item: '🧃', ticket: '🎟️' }[type] || '🎒';
 }
 
 function showItemDetail(item) {
@@ -1304,110 +1242,9 @@ function refreshCoinsAndHonor() {
 
 
 
-function refreshEquipmentPanel() {
-  const container = document.getElementById("equipment-panel");
-  container.innerHTML = "載入中...";
-
-  google.script.run.withSuccessHandler(data => {
-    const eqList = data.equippedList;  // 已裝備項目
-    const allSlots = ["Head", "Body", "Gloves", "Belt", "Shoes", "Weapon", "Accessory"];
-
-    const slotNameMap = {
-      Head: "🪖 頭部", Body: "🛡️ 身體", Gloves: "🧤 手部",
-      Belt: "🧷 腰帶", Shoes: "👟 鞋子", Weapon: "🗡️ 武器", Accessory: "📿 飾品"
-    };
-
-    const html = allSlots.map(slot => {
-      const equip = eqList.find(e => e.Slot === slot);
-      const name = equip ? equip.Name : "❌ 無";
-      const stats = equip ? `（${formatEquipStats(equip)}）` : "";
-      return `<div class="slot-row" onclick="openEquipModal('${slot}')"
-                style="padding:6px; margin:4px 0; border-bottom:1px solid #ccc; cursor:pointer;">
-                <strong>${slotNameMap[slot] || slot}：</strong> ${name} ${stats}
-              </div>`;
-    }).join('');
-
-    container.innerHTML = html;
-  }).getEquippedInfo();
-}
-function openEquipModal(slot) {
-  const modal = document.getElementById('equip-selection-modal');
-  document.getElementById('equip-modal-title').innerText = `選擇裝備 - ${slot}`;
-
-  google.script.run
-    .withSuccessHandler(data => {
-      const current = data.currentEquip;
-      const list = data.options;
-
-      const currentText = current
-        ? `當前裝備：${current.Name}（${formatEquipStats(current)})`
-        : `當前裝備：❌ 未裝備`;
-
-      document.getElementById('current-equip-info').innerText = currentText;
-
-      const listDiv = document.getElementById('equip-options-list');
-      listDiv.innerHTML = '';
-
-      list.forEach(item => {
-        const row = document.createElement('div');
-        row.style = 'margin:4px 0; padding:4px; border-bottom:1px solid #ccc;';
-
-        let text = `${item.Name} (${formatEquipStats(item)})`;
-        if (!item.canEquip) text += ` 🔒 ${item.reason || '條件不足'}`;
-
-        const span = document.createElement('span');
-        span.innerText = text;
-        row.appendChild(span);
-
-        if (item.canEquip) {
-          const btn = document.createElement('button');
-          btn.innerText = '裝備';
-          btn.style = 'margin-left:10px;';
-          btn.onclick = () => confirmEquip(slot, item.EquipmentID);
-          row.appendChild(btn);
-        } else {
-          row.style.opacity = 0.5;
-          row.style.cursor = 'not-allowed';
-        }
-
-        listDiv.appendChild(row);
-      });
-
-      modal.classList.remove('hidden');
-    })
-    .withFailureHandler(err => {
-      showToast("❌ 載入裝備失敗：" + err.message);
-    })
-    .getEquipOptions(slot);
-}
-
-function formatEquipStats(equip) {
-  const parts = [];
-  const keys = [
-    "HPBoost", "MPBoost", "AttackBoost", "DefenseBoost",
-    "MagicAttackBoost", "MagicDefenseBoost", "AgilityBoost",
-    "AccuracyBoost", "EvasionBoost", "CriticalRateBoost",
-    "ResistanceBoost"
-  ];
-  keys.forEach(k => {
-    const v = parseFloat(equip[k]) || 0;
-    if (v !== 0) parts.push(`${mapFieldToName(k.replace("Boost", ""))} +${v}`);
-  });
-  return parts.join(' / ');
-}
-function openEquipmentModal() {
-  const modal = document.getElementById('equipment-modal');
-  if (modal) modal.classList.remove('hidden');
-
-  // 更新裝備資訊
-  refreshEquipmentPanel();
-}
-
-
 
 
 
 </script>
 
 </html>
-
