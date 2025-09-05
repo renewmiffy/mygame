@@ -229,6 +229,7 @@ body {
   flex-direction: column;
   gap: 10px;
   align-items: center;
+}
 .mission-item {
   background: url('https://i.imgur.com/3G5eV1Q.png') no-repeat center center;  /* 任務卡背景圖片 */
   background-size: cover;
@@ -313,21 +314,65 @@ body {
   border-radius: 5px;
   cursor: not-allowed;
 }
-.daily-task-button {
-  background-color: #fff5e1;
-  border: 2px solid #e0c39c;
-  border-radius: 8px;
-  padding: 10px 15px;
-  margin: 6px;
-  font-size: 16px;
+
+/* --- 全新的日常活動卡片樣式 --- */
+
+/* 容納所有卡片的網格容器 */
+.tasks-grid {
+  display: grid;
+  /* 自動填充，每個格子最小 120px，最大 1fr (平均分配剩餘空間) */
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 16px; /* 格子間的空隙 */
+  padding: 10px;
+}
+
+/* 單張活動卡片的樣式 */
+.daily-task-card {
+  background: linear-gradient(145deg, #fffaf0, #fdf5e6); /* 溫暖的漸層背景 */
+  border: 2px solid #d2b48c; /* 譚色邊框 */
+  border-radius: 12px;
+  padding: 20px 10px;
+  font-size: 1rem;
   font-weight: bold;
-  color: #5c4033;
+  color: #6b4f3a; /* 深棕色文字 */
   cursor: pointer;
-  box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1), inset 0 1px 1px rgba(255, 255, 255, 0.7);
+  text-align: center;
+  transition: all 0.2s ease-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+}
+
+/* 滑鼠懸停在未完成的卡片上時 */
+.daily-task-card:not(.completed):hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.7);
+  border-color: #c19a6b; /* 邊框變亮 */
+}
+
+/* 已完成的卡片樣式 */
+.daily-task-card.completed {
+  background: linear-gradient(145deg, #f5f5f5, #e8e8e8); /* 灰色漸層 */
+  border-color: #cccccc;
+  color: #999999;
+  text-decoration: line-through; /* 文字劃掉 */
+  cursor: not-allowed;
+  box-shadow: none; /* 移除陰影，看起來更扁平 */
+}
+
+/* 已完成的卡片在滑鼠懸停時沒有效果 */
+.daily-task-card.completed:hover {
+  transform: none;
+  box-shadow: none;
 }
 .equip-item {
   padding: 2px 4px;
   font-weight: 500;
+}
+.adventure-modal.hidden {
+  display: none;
 }
  
   </style>
@@ -485,7 +530,7 @@ body {
 
   <div class="adventure-content">
     <h3>🧺 日常活動</h3>
-    <div id="daily-task-list">
+    <div id="daily-task-list" class="tasks-grid">
       <!-- 活動按鈕 JS 會動態產生 -->
     </div>
   </div>
@@ -495,26 +540,11 @@ body {
   <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
   <div class="adventure-content">
     <h3>📖 學習清單</h3>
-    <div id="study-list">載入中...</div>
-  </div>
-</div>
-<div id="equipment-modal" class="adventure-modal hidden">
-  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
-  <div class="adventure-content">
-    <h3>🗡️ 當前裝備</h3>
-    <div id="equipment-list">載入中...</div>
-    <h3>📊 裝備屬性加成</h3>
-    <div id="equipment-attributes">載入中...</div>
+    <div id="study-list" class="tasks-grid">載入中...</div>
   </div>
 </div>
 
-<div id="equip-selection-modal" class="adventure-modal hidden">
-  <button onclick="closeModal(this)" style="position:absolute;top:10px;right:10px;">❌</button>
-  <div class="adventure-content">
-    <h3>🔁 更換裝備：<span id="equip-slot-name"></span></h3>
-    <div id="equip-selection-list">載入中...</div>
-  </div>
-</div>
+
 <div id="loading-overlay" class="hidden">
   <div class="loading-spinner"></div>
   <div class="loading-text">處理中，請稍候...</div>
@@ -562,7 +592,27 @@ body {
     <button onclick="closeModal(this)">❌ 取消</button>
   </div>
 </div>
+<!-- ✅ 裝備頁面 -->
+<div id="equipment-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3>🛡️ 角色裝備</h3>
+    <div id="equipment-panel">
+      <!-- 將顯示目前已裝備內容 -->
+    </div>
+  </div>
+</div>
 
+
+
+<div id="equip-selection-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3 id="equip-modal-title">選擇裝備</h3>
+    <div id="current-equip-info" style="margin-bottom:10px;"></div>
+    <div id="equip-options-list" style="max-height:250px; overflow-y:auto;"></div>
+  </div>
+</div>
 
 
 </body>
@@ -892,22 +942,20 @@ google.script.run
 }
 function renderDailyTaskButtons(tasks) {
   const container = document.getElementById('daily-task-list');
-  container.innerHTML = '';
+  container.innerHTML = ''; // 清空舊內容
 
   tasks.forEach(task => {
-    const btn = document.createElement('button');
-    btn.className = 'daily-task-button';
-    btn.innerText = task.name;
+    // 建立卡片 div，而不是 button
+    const card = document.createElement('div');
+    card.className = 'daily-task-card';
+    card.textContent = task.name; // 將任務名稱放入卡片
 
-    // 先預設啟用（會在 getDailyTaskList() 裡加 fulfilled 欄位才可判斷）
-    btn.disabled = task.fulfilledToday === true;
-    if (btn.disabled) {
-      btn.style.opacity = '0.5';
-      btn.style.cursor = 'not-allowed';
-    }
-
-    btn.onclick = () => {
-      if (btn.disabled) return;
+    if (task.fulfilledToday) {
+      // 如果今天已完成，加上 'completed' class
+      card.classList.add('completed');
+    } else {
+      // 如果尚未完成，才加上點擊事件
+      card.onclick = () => {
       google.script.run
         .withSuccessHandler(() => {
           showToast("✅ 任務完成！");
@@ -915,12 +963,12 @@ function renderDailyTaskButtons(tasks) {
           openDailyModal(); // 重新刷新按鈕狀態
         })
         .withFailureHandler(err => {
-          showToast("❌ 錯誤：" + err.message);
+          showToast("❌ " + err.message);
         })
         .doDailyTask(task.id);
-    };
-
-    container.appendChild(btn);
+      };
+    }
+    container.appendChild(card);
   });
 }
 function closeModal(button) {
@@ -942,27 +990,30 @@ function loadStudyList(showLoading = true) {
     list.innerHTML = '載入中...';
   }
 
-  const todayStr = new Date().toISOString().split('T')[0].replace(/-/g, '/');
-
   google.script.run.withSuccessHandler(function(skills) {
-    list.innerHTML = '';
-    skills.forEach(skill => {
-      const btn = document.createElement("button");
-      btn.className = "daily-task-button";
-      btn.innerText = skill.SkillName;
+    list.innerHTML = ''; // 清空
+    if (!skills || skills.length === 0) {
+      // 為了維持 grid 樣式，用一個 div 包起來
+      list.innerHTML = '<div>目前沒有可以學習的技能。</div>';
+      return;
+    }
 
-      if (skill.LastDoneDate === todayStr) {
-        btn.disabled = true;
-        btn.style.opacity = "0.5";
-        btn.style.cursor = "not-allowed";
-        btn.title = "今天已學過";
+    skills.forEach(skill => {
+      const card = document.createElement("div");
+      card.className = "daily-task-card";
+      card.textContent = skill.SkillName;
+
+      // ✅ 使用後端傳來的 learnedToday 旗標，更可靠
+      if (skill.learnedToday) {
+        card.classList.add('completed');
+        card.title = "今天已學過";
       } else {
-        btn.onclick = () => {
+        card.onclick = () => {
           google.script.run
             .withSuccessHandler(() => {
               showToast(`🎓 學習 ${skill.SkillName} 完成`);
               refreshMainGameUI();
-              refreshLearningList(); // 👇 不會再看到「載入中...」
+              refreshLearningList(); // 刷新學習列表狀態
             })
             .withFailureHandler(err => {
               showToast("❌ 錯誤：" + err.message);
@@ -970,8 +1021,7 @@ function loadStudyList(showLoading = true) {
             .doLearning(skill.SkillID);
         };
       }
-
-      list.appendChild(btn);
+      list.appendChild(card);
     });
   }).getAllSkills();
 }
@@ -993,154 +1043,7 @@ function claimDailyTask(missionId) {
     })
     .claimDailyTask(missionId);
 }
-function openEquipmentModal() {
-  document.getElementById('equipment-modal').classList.remove('hidden');
-  document.getElementById('equipment-list').innerText = '載入中...';
-  document.getElementById('equipment-attributes').innerText = '載入中...';
 
-  google.script.run.withSuccessHandler(renderEquipmentInfo).getEquippedInfo();
-}
-
-function renderEquipmentInfo(data) {
-  const listBox = document.getElementById('equipment-list');
-  const attrBox = document.getElementById('equipment-attributes');
-
-  // 顯示裝備欄
-listBox.innerHTML = Object.entries(data.equipped || {}).map(([slot, name]) =>
-  `<div class="equip-item" style="color:blue;cursor:pointer;" onclick="openEquipSelection('${slot}')">
-    ${data.slotNames?.[slot] || slot}：${name || '空'}
-  </div>`
-).join('');
-
-
-
-
-
-  const attrIcons = {
-    HP: "❤️", MP: "💧", PhysicalAttack: "⚔️", PhysicalDefense: "🛡️",
-    MagicAttack: "🔥", MagicDefense: "🔰", Agility: "🏃", Accuracy: "🎯",
-    Evasion: "🌀", CriticalRate: "💥", CriticalDamage: "🔪", Luck: "🍀", Resistance: "🛡"
-  };
-
-  const fallbackAttrNames = {
-    HP: "生命值", MP: "魔力值",
-    PhysicalAttack: "物理攻擊", PhysicalDefense: "物理防禦",
-    MagicAttack: "魔法攻擊", MagicDefense: "魔法防禦",
-    Agility: "敏捷", Accuracy: "命中",
-    Evasion: "閃避", CriticalRate: "暴擊率",
-    CriticalDamage: "暴擊傷害", Luck: "幸運", Resistance: "抗性"
-  };
-
-const attributeDisplayOrder = [
-  "HP", "MP",
-  "PhysicalAttack", "MagicAttack", "PhysicalDefense", "MagicDefense",
-  "Agility", "Accuracy", "Evasion",
-  "CriticalRate", "CriticalDamage",
-  "Luck", "Resistance"
-];
-
-const lines = attributeDisplayOrder.map(key => {
-  const obj = data.attributes?.[key];
-  if (!obj) return '';  // 忽略不存在的屬性（例如尚未初始化）
-
-  const base = Math.round(parseFloat(obj.base) || 0);
-  const equip = Math.round(parseFloat(obj.equip) || 0);
-  const bonus = Math.round(parseFloat(obj.bonus) || 0);
-  const final = Math.round(parseFloat(obj.final) || 0);
-
-  const icon = attrIcons[key] || '';
-  const label = data.attrNames?.[key] || fallbackAttrNames[key] || key;
-
-  let display = `<strong>${base}</strong>`;
-  if (equip || bonus) {
-    if (equip) display += ` + <span style="color:green;">${equip}</span>`;
-    if (bonus) display += ` + <span style="color:blue;">${bonus}</span>`;
-    display += ` = <strong>${final}</strong>`;
-  }
-
-  return `<div style="margin-bottom:4px;">${icon} <strong>${label}</strong>：${display}</div>`;
-});
-
-  attrBox.innerHTML = `<div style="font-size:14px;">${lines.join('')}</div>`;
-}
-
-
-
-
-function getSlotIcon(slot) {
-  const icons = {
-    Head: '🎽', Body: '🧥', Gloves: '🧤', Belt: '🧷', Shoes: '👟',
-    Accessory: '💍', Weapon: '🗡️'
-  };
-  return icons[slot] || '🎒';
-}
-
-function openEquipSelection(slot) {
-  document.getElementById('equipment-modal').classList.remove('hidden');
-  document.getElementById('equipment-list').innerText = '載入中...';
-  
-  google.script.run.withSuccessHandler(data => {
-    const listBox = document.getElementById('equipment-list');
-    const attrBox = document.getElementById('equipment-attributes');
-    const items = data.candidates || [];
-
-    let html = `<div class="equip-choice" style="color:red;cursor:pointer;" onclick="unequipItem('${slot}')">🔓 卸下裝備</div>`;
-
-    const boostFields = [
-      { key: 'HPBoost', label: '生命' },
-      { key: 'MPBoost', label: '魔力' },
-      { key: 'AttackBoost', label: '攻' },
-      { key: 'DefenseBoost', label: '防' },
-      { key: 'MagicAttackBoost', label: '魔攻' },
-      { key: 'MagicDefenseBoost', label: '魔防' },
-      { key: 'AgilityBoost', label: '敏' },
-      { key: 'AccuracyBoost', label: '命中' },
-      { key: 'EvasionBoost', label: '閃避' },
-      { key: 'CriticalRateBoost', label: '爆率' },
-      { key: 'CriticalDamageBoost', label: '爆傷' },
-      { key: 'LuckBoost', label: '幸運' },
-      { key: 'ResistanceBoost', label: '抗性' }
-    ];
-
-    if (items.length) {
-      html += items.map(e => {
-  const bonusText = boostFields
-    .map(({ key, label }) => {
-      const val = parseFloat(e[key]) || 0;
-      return val !== 0 ? `+${val}${label}` : '';
-    })
-    .filter(txt => txt !== '')
-    .join(' ');
-
-  return `
-    <div class="equip-choice" style="cursor:pointer;" onclick="confirmEquip('${slot}', '${e.EquipmentID}')">
-      ${e.Name}${bonusText ? ` (${bonusText})` : ''}
-    </div>
-  `;
-}).join('');
-
-    } else {
-      html += '<div>⚠️ 沒有可用裝備</div>';
-    }
-
-    listBox.innerHTML = html;
-    attrBox.innerHTML = '<div style="text-align:center;">請選擇裝備以檢視屬性。</div>';
-  }).getAvailableEquipments(slot);
-}
-
-
-
-
-
-function confirmEquip(slot, equipmentID) {
-  google.script.run
-    .withSuccessHandler(() => {
-      showToast("✅ 裝備已更換！");
-      closeModal(document.getElementById("equip-selection-modal"));
-      openEquipmentModal();  // 🔁 只更新裝備視窗即可
-    })
-    .equipItem(slot, equipmentID);
-}
 
 
 function refreshHeaderBar() {
@@ -1248,7 +1151,7 @@ function switchBagTab(tab) {
 }
 
 function renderBagItems(items) {
-  const group = { all: [], equip: [], item: [], ticket: [] };
+  const group = { all: [], item: [], ticket: [] };
 
   items.forEach(i => {
     const type = (i.ItemType || '').toLowerCase();
@@ -1256,22 +1159,15 @@ function renderBagItems(items) {
     const label = `${icon} ${i.ItemName} x${i.Count}`;
     const showDetail = `showItemDetail(${JSON.stringify(i).replace(/"/g, '&quot;')})`;
 
-    const canSell = items.filter(x => x.ItemID === i.ItemID).length > 1 || i.Equipped !== true;
+    const canSell = i.Count > 1;
 
-    const safeItemName = JSON.stringify(i.ItemName);
-// ③ renderBagItems() 中的販售按鈕改為帶 count
-const sellBtn = canSell
-  ? `<button onclick="showSellModal('${i.ItemID}',
-        decodeURIComponent('${encodeURIComponent(i.ItemName)}'),
-        ${i.Count})">販售</button>`
-  : `<button class="btn-disabled" disabled>無法販售</button>`;
+    const sellBtn = canSell
+      ? `<button onclick="showSellModal('${i.ItemID}',
+            decodeURIComponent('${encodeURIComponent(i.ItemName)}'),
+            ${i.Count})">販售</button>`
+      : `<button class="btn-disabled" disabled>無法販售</button>`;
 
-
-
-
-    const actionBtn = (type === 'equip')
-      ? `<button onclick="equipItem('${i.Slot}', '${i.ItemID}')">裝備</button>`
-      : `<button onclick="useItem('${i.ItemID}')">使用</button>`;
+    const actionBtn = `<button onclick="useItem('${i.ItemID}')">使用</button>`;
 
     const html = `
       <div style="border:1px solid #ccc; border-radius:6px; padding:6px; margin:6px 0; background:#fffdf9;">
@@ -1280,15 +1176,18 @@ const sellBtn = canSell
       </div>`;
 
     group.all.push(html);
-    if (type === 'equip') group.equip.push(html);
-    else if (type.includes('ticket')) group.ticket.push(html);
+    if (type.includes('ticket')) group.ticket.push(html);
     else group.item.push(html);
   });
 
-  ['all', 'equip', 'item', 'ticket'].forEach(t => {
+  ['all', 'item', 'ticket'].forEach(t => {
     document.getElementById('bag-list-' + t).innerHTML = group[t].join('') || '<div>目前沒有物品</div>';
   });
+
+  // 裝備頁清空
+  document.getElementById('bag-list-equip').innerHTML = '<div>（已移除裝備功能）</div>';
 }
+
 
 
 
@@ -1402,28 +1301,107 @@ function refreshCoinsAndHonor() {
     showToast("❌ 金幣/榮譽點更新失敗：" + err.message);
   }).getQuickStatus();
 }
-function unequipItem(slot) {
-  google.script.run.withSuccessHandler(() => {
-    showToast("✅ 已卸下裝備！");
-    closeModal(document.getElementById("equipment-modal"));
-    refreshMainGameUI(); // 若你 UI 有寫這個
-  }).unequip(slot);
+
+
+
+function refreshEquipmentPanel() {
+  const container = document.getElementById("equipment-panel");
+  container.innerHTML = "載入中...";
+
+  google.script.run.withSuccessHandler(data => {
+    const eqList = data.equippedList;  // 已裝備項目
+    const allSlots = ["Head", "Body", "Gloves", "Belt", "Shoes", "Weapon", "Accessory"];
+
+    const slotNameMap = {
+      Head: "🪖 頭部", Body: "🛡️ 身體", Gloves: "🧤 手部",
+      Belt: "🧷 腰帶", Shoes: "👟 鞋子", Weapon: "🗡️ 武器", Accessory: "📿 飾品"
+    };
+
+    const html = allSlots.map(slot => {
+      const equip = eqList.find(e => e.Slot === slot);
+      const name = equip ? equip.Name : "❌ 無";
+      const stats = equip ? `（${formatEquipStats(equip)}）` : "";
+      return `<div class="slot-row" onclick="openEquipModal('${slot}')"
+                style="padding:6px; margin:4px 0; border-bottom:1px solid #ccc; cursor:pointer;">
+                <strong>${slotNameMap[slot] || slot}：</strong> ${name} ${stats}
+              </div>`;
+    }).join('');
+
+    container.innerHTML = html;
+  }).getEquippedInfo();
 }
-function equipItem(slot, equipmentID) {
-  if (!confirm("要裝備這個裝備嗎？")) return;
+function openEquipModal(slot) {
+  const modal = document.getElementById('equip-selection-modal');
+  document.getElementById('equip-modal-title').innerText = `選擇裝備 - ${slot}`;
+
   google.script.run
-    .withSuccessHandler(() => {
-      showToast("🗡️ 裝備成功！");
-      refreshMainGameUI();
-      openBag();
+    .withSuccessHandler(data => {
+      const current = data.currentEquip;
+      const list = data.options;
+
+      const currentText = current
+        ? `當前裝備：${current.Name}（${formatEquipStats(current)})`
+        : `當前裝備：❌ 未裝備`;
+
+      document.getElementById('current-equip-info').innerText = currentText;
+
+      const listDiv = document.getElementById('equip-options-list');
+      listDiv.innerHTML = '';
+
+      list.forEach(item => {
+        const row = document.createElement('div');
+        row.style = 'margin:4px 0; padding:4px; border-bottom:1px solid #ccc;';
+
+        let text = `${item.Name} (${formatEquipStats(item)})`;
+        if (!item.canEquip) text += ` 🔒 ${item.reason || '條件不足'}`;
+
+        const span = document.createElement('span');
+        span.innerText = text;
+        row.appendChild(span);
+
+        if (item.canEquip) {
+          const btn = document.createElement('button');
+          btn.innerText = '裝備';
+          btn.style = 'margin-left:10px;';
+          btn.onclick = () => confirmEquip(slot, item.EquipmentID);
+          row.appendChild(btn);
+        } else {
+          row.style.opacity = 0.5;
+          row.style.cursor = 'not-allowed';
+        }
+
+        listDiv.appendChild(row);
+      });
+
+      modal.classList.remove('hidden');
     })
     .withFailureHandler(err => {
-      showToast("❌ 裝備失敗：" + err.message);
+      showToast("❌ 載入裝備失敗：" + err.message);
     })
-    .equipItem(slot, equipmentID);
+    .getEquipOptions(slot);
 }
 
+function formatEquipStats(equip) {
+  const parts = [];
+  const keys = [
+    "HPBoost", "MPBoost", "AttackBoost", "DefenseBoost",
+    "MagicAttackBoost", "MagicDefenseBoost", "AgilityBoost",
+    "AccuracyBoost", "EvasionBoost", "CriticalRateBoost",
+    "ResistanceBoost"
+  ];
+  keys.forEach(k => {
+    const v = parseFloat(equip[k]) || 0;
+    if (v !== 0) parts.push(`${mapFieldToName(k.replace("Boost", ""))} +${v}`);
+  });
+  return parts.join(' / ');
+}
+function openEquipmentModal() {
+  const modal = document.getElementById('equipment-modal');
+  if (modal) modal.classList.remove('hidden');
 
+  // 更新裝備資訊
+  refreshEquipmentPanel();
+}
 
 
 

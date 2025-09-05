@@ -4,7 +4,7 @@ function doGet() {
   return HtmlService.createHtmlOutputFromFile('index');
 }
 function getProfileData() {
-  const ss = SpreadsheetApp.openById('16soa5MJP8XtRUsOvr6VjBArPSK0qZUeYs8pZnkwE1-s');
+  const ss = SpreadsheetApp.openById('1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs');
   const sheet = ss.getSheetByName('Profile');
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const row = sheet.getRange(2, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -49,7 +49,7 @@ function getProfileData() {
   };
 }
 function getSurveyQuestions() {
-  const ss = SpreadsheetApp.openById('16soa5MJP8XtRUsOvr6VjBArPSK0qZUeYs8pZnkwE1-s');
+  const ss = SpreadsheetApp.openById('1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs');
   const sheet = ss.getSheetByName('SurveyQuestions');
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
@@ -68,7 +68,7 @@ function getSurveyQuestions() {
 
 
 function handleSurvey(formData) {
-  const ss = SpreadsheetApp.openById('16soa5MJP8XtRUsOvr6VjBArPSK0qZUeYs8pZnkwE1-s');
+  const ss = SpreadsheetApp.openById('1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs');
   const profileSheet = ss.getSheetByName('Profile');
   const questionsSheet = ss.getSheetByName('SurveyQuestions');
   const logSheet = ss.getSheetByName('SurveyLog');
@@ -131,7 +131,7 @@ function handleSurvey(formData) {
 }
 
 function getRecentLogs() {
-  const ss = SpreadsheetApp.openById('16soa5MJP8XtRUsOvr6VjBArPSK0qZUeYs8pZnkwE1-s');
+  const ss = SpreadsheetApp.openById('1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs');
   const logSheet = ss.getSheetByName('PlayerLog');
   const mapSheet = ss.getSheetByName('FieldMapping');
 
@@ -182,7 +182,7 @@ function applyAttributeLimit(profile) {
 }
 
 function writeProfile(profile, source = "系統") {
-  const ss = SpreadsheetApp.openById("16soa5MJP8XtRUsOvr6VjBArPSK0qZUeYs8pZnkwE1-s");
+  const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
   const profileSheet = ss.getSheetByName("Profile");
   const logSheet = ss.getSheetByName("PlayerLog");
 
@@ -403,7 +403,7 @@ function formatYMD(value) {
 }
 
 function doDailyTask(taskId) {
-  const ss = SpreadsheetApp.openById("16soa5MJP8XtRUsOvr6VjBArPSK0qZUeYs8pZnkwE1-s");
+  const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
   const taskSheet = ss.getSheetByName("DailyTasks");
   const profileSheet = ss.getSheetByName("Profile");
   const logSheet = ss.getSheetByName("PlayerLog");
@@ -461,7 +461,7 @@ function doDailyTask(taskId) {
 
 
 function getDailyTaskList() {
-  const ss = SpreadsheetApp.openById("16soa5MJP8XtRUsOvr6VjBArPSK0qZUeYs8pZnkwE1-s");
+  const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
   const sheet = ss.getSheetByName("DailyTasks");
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
@@ -487,7 +487,7 @@ function getDailyTaskList() {
   });
 }
 function doLearning(skillId) {
-  const ss = SpreadsheetApp.openById("16soa5MJP8XtRUsOvr6VjBArPSK0qZUeYs8pZnkwE1-s");
+  const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
   const skillSheet = ss.getSheetByName("SkillMaster");
   const profileSheet = ss.getSheetByName("Profile");
 
@@ -543,21 +543,26 @@ function doLearning(skillId) {
 
 
 function getAllSkills() {
-  const ss = SpreadsheetApp.openById("16soa5MJP8XtRUsOvr6VjBArPSK0qZUeYs8pZnkwE1-s");
+  const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
   const sheet = ss.getSheetByName("SkillMaster");
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   const rows = data.slice(1);
-
+  
+  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
+  
   return rows.map(row => {
     const skill = {};
+    let lastDateStr = "";
     headers.forEach((h, i) => {
       if (h === "LastDoneDate" && row[i] instanceof Date) {
-        skill[h] = Utilities.formatDate(row[i], Session.getScriptTimeZone(), "yyyy/MM/dd");
+        lastDateStr = Utilities.formatDate(row[i], Session.getScriptTimeZone(), "yyyy/MM/dd");
+        skill[h] = lastDateStr;
       } else {
         skill[h] = row[i];
       }
     });
+    skill.learnedToday = (lastDateStr === todayStr);
     return skill;
   });
 }
@@ -575,234 +580,10 @@ function getAttributeMap() {
 
   return map;
 }
-function getEquippedInfo() {
-  const ss = SpreadsheetApp.getActive();
-  const profileSheet = ss.getSheetByName("Profile");
-  const equipSheet = ss.getSheetByName("EquipmentMaster");
-  const mapSheet = ss.getSheetByName("FieldMapping");
-  const attrSheet = ss.getSheetByName("AdventureAttributes");
 
-  // 取得 Profile 資料
-  const profileRow = profileSheet.getRange(2, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const profileHeader = profileSheet.getRange(1, 1, 1, profileRow.length).getValues()[0];
-  const profile = {};
-  profileHeader.forEach((k, i) => profile[k] = profileRow[i]);
-
-  const playerName = profile["PlayerName"];
-  if (!playerName) throw new Error("❌ Profile 中找不到 PlayerName");
-
-  // 抓裝備
-  const equippedSlots = ['Head', 'Body', 'Gloves', 'Belt', 'Shoes', 'Accessory','Weapon'];
-  const equipped = {}, equipIDs = [];
-  equippedSlots.forEach(slot => {
-    const id = profile[slot];
-    equipped[slot] = id || '';
-    if (id) equipIDs.push(id);
-  });
-
-  // 抓裝備加成資料
-  const equipData = equipSheet.getDataRange().getValues();
-  const equipHeader = equipData[0];
-  const equipRows = equipData.slice(1).filter(row => equipIDs.includes(row[0]));
-
-  // 抓屬性欄位與值（AdventureAttributes）
-  const attrData = attrSheet.getDataRange().getValues();
-  const attrHeader = attrData[0];
-  const attrRow = attrData.find(r => r[0] === playerName);
-  if (!attrRow) throw new Error("❌ AdventureAttributes 中找不到玩家資料");
-
-  // 抓欄位名稱對照（FieldMapping）
-  const mapRows = mapSheet.getRange(2, 1, mapSheet.getLastRow() - 1, 2).getValues();
-  const attrNames = {};
-  mapRows.forEach(([zh, en]) => {
-    if (zh && en) {
-      attrNames[en] = zh;
-    }
-  });
-
-  // 對應 slot 名稱
-  const slotNames = {};
-  equippedSlots.forEach(slot => {
-    const zh = mapRows.find(r => r[1] === slot)?.[0] || slot;
-    slotNames[slot] = zh;
-  });
-
-  // 對應裝備顯示名稱
-  const nameMap = {};
-  equipRows.forEach(row => {
-    nameMap[row[0]] = row[equipHeader.indexOf("Name")];
-  });
-  Object.entries(equipped).forEach(([slot, id]) => {
-    equipped[slot] = nameMap[id] || '空';
-  });
-
-  // 🚀 抓取 AdventureAttributes 中所有 BaseXXX 欄位
-  const attributes = {};
-  attrHeader.forEach((field, i) => {
-    if (!/^Base[A-Z]/.test(field)) return; // 只處理 Base 開頭欄位
-
-    const attrKey = field.replace(/^Base/, '');  // 例如 BaseHP ➜ HP
-    const base = parseFloat(attrRow[i]) || 0;
-
-    const equipKey = "Equip" + attrKey;
-    const bonusKey = attrKey + "Bonus";
-    const finalKey = "Final" + attrKey;
-
-    const equipIndex = attrHeader.indexOf(equipKey);
-    const bonusIndex = profileHeader.indexOf(bonusKey);
-    const finalIndex = attrHeader.indexOf(finalKey);
-
-    const equip = (equipIndex !== -1) ? parseFloat(attrRow[equipIndex]) || 0 : 0;
-    const bonus = (bonusIndex !== -1) ? parseFloat(profile[bonusKey]) || 0 : 0;
-    const final = (finalIndex !== -1) ? parseFloat(attrRow[finalIndex]) || (base + equip + bonus) : (base + equip + bonus);
-
-    attributes[attrKey] = {
-      base,
-      equip,
-      bonus,
-      final
-    };
-  });
-
-  // ✅ 回傳給前端使用
-  return {
-    playerName,
-    equipped,
-    slotNames,
-    attrNames,
-    attributes
-  };
-}
-
-function equipItem(slot, equipmentID) {
-  const ss = SpreadsheetApp.getActive();
-  const profileSheet = ss.getSheetByName("Profile");
-  const inventorySheet = ss.getSheetByName("Inventory");
-
-  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-
-  // 先找出欄位位置
-  const slotCol = profileHeaders.indexOf(slot);
-  if (slotCol === -1) throw new Error("❌ Profile 中找不到欄位: " + slot);
-
-  // 把舊裝備設為未裝備
-  const oldEquipID = profileRow[slotCol];
-  const invData = inventorySheet.getDataRange().getValues();
-  const invHeaders = invData[0];
-  const idCol = invHeaders.indexOf("ItemID");
-  const equippedCol = invHeaders.indexOf("Equipped");
-
-  for (let i = 1; i < invData.length; i++) {
-    const row = invData[i];
-    if (row[idCol] === oldEquipID) {
-      inventorySheet.getRange(i + 1, equippedCol + 1).setValue(false);
-    }
-  }
-
-  // 把新裝備設為已裝備
-  for (let i = 1; i < invData.length; i++) {
-    const row = invData[i];
-    if (row[idCol] === equipmentID) {
-      inventorySheet.getRange(i + 1, equippedCol + 1).setValue(true);
-      break;
-    }
-  }
-
-  // 更新 profile 中裝備欄位
-  profileSheet.getRange(2, slotCol + 1).setValue(equipmentID);
-  return { success: true };
-}
-
-
-
-
-function updateAdventureAttributesWithEquip() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const profileSheet = ss.getSheetByName("Profile");
-  const equipSheet = ss.getSheetByName("EquipmentMaster");
-  const attrSheet = ss.getSheetByName("AdventureAttributes");
-
-  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-  const profile = {};
-  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
-  const get = (key) => parseFloat(profile[key] || 0);
-
-  const Intelligence = get("Intelligence"), IntelligenceLevel = get("IntelligenceLevel");
-  const Physical = get("Physical"), PhysicalLevel = get("PhysicalLevel");
-  const Creativity = get("Creativity"), CreativityLevel = get("CreativityLevel");
-  const Sensitivity = get("Sensitivity"), SensitivityLevel = get("SensitivityLevel");
-  const Grace = get("Grace"), GraceLevel = get("GraceLevel");
-  const SelfDiscipline = get("SelfDiscipline");
-
-  const Luck = 10 + SelfDiscipline * 0.5;
-  const Agility = SensitivityLevel * 8 + Sensitivity * 0.4;
-  const calc = (base, bonusField) => base + (get(bonusField) || 0);
-
-  const Base = {
-    BaseHP: PhysicalLevel * 80 + Physical * 0.5,
-    BaseMP: IntelligenceLevel * 60 + Intelligence * 0.5,
-    BasePhysicalAttack: PhysicalLevel * 10 + Physical * 0.3,
-    BasePhysicalDefense: PhysicalLevel * 8 + SelfDiscipline * 0.5,
-    BaseMagicAttack: IntelligenceLevel * 12 + Creativity * 0.5,
-    BaseMagicDefense: IntelligenceLevel * 6 + Grace * 0.3 + Sensitivity * 0.3,
-    BaseAgility: Agility,
-    BaseAccuracy: GraceLevel * 6 + Intelligence * 0.2,
-    BaseEvasion: Agility * 0.5 + Sensitivity * 0.3,
-    BaseCriticalRate: Creativity * 0.3 + Luck * 0.5,
-    BaseCriticalDamage: Creativity * 0.6 + Physical * 0.3,
-    BaseLuck: Luck,
-    BaseResistance: SelfDiscipline * 0.6 + Grace * 0.3,
-  };
-
-  const equippedSlots = ['Head', 'Body', 'Gloves', 'Belt', 'Shoes', 'Accessory', 'Weapon'];
-  const equipIDs = equippedSlots.map(s => profile[s]).filter(Boolean);
-  const equipData = equipSheet.getDataRange().getValues();
-  const equipHeaders = equipData[0];
-  const equipRows = equipData.slice(1).filter(row => equipIDs.includes(row[0]));
-
-  const Equip = {};
-  Object.keys(Base).forEach(k => {
-    const attr = k.replace("Base", "");
-    Equip["Equip" + attr] = 0;
-  });
-
-  equipRows.forEach(row => {
-    Object.keys(Equip).forEach(k => {
-      const field = k.replace("Equip", "") + "Boost"; // e.g. HPBoost
-      const colIdx = equipHeaders.indexOf(field);
-      if (colIdx !== -1) {
-        Equip[k] += parseFloat(row[colIdx]) || 0;
-      }
-    });
-  });
-
-  const Final = {};
-  Object.keys(Base).forEach(k => {
-    const attr = k.replace("Base", "");
-    Final["Final" + attr] =
-      (Base[k] || 0) +
-      (Equip["Equip" + attr] || 0) +
-      (get(attr + "Bonus") || 0);
-  });
-
-  const finalData = {
-    ...Base,
-    ...Equip,
-    ...Final
-  };
-
-  const attrHeaders = attrSheet.getRange(1, 1, 1, attrSheet.getLastColumn()).getValues()[0];
-  const outputRow = attrHeaders.map(k => finalData[k] ?? '');
-
-  attrSheet.getRange(2, 1, 1, outputRow.length).setValues([outputRow]);
-
-  Logger.log("✅ 已更新 AdventureAttributes");
-}
 
 function getQuickStatus() {
-  const ss = SpreadsheetApp.openById("16soa5MJP8XtRUsOvr6VjBArPSK0qZUeYs8pZnkwE1-s");
+  const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
   const profileSheet = ss.getSheetByName("Profile");
 
   const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
@@ -840,14 +621,11 @@ function getInventory() {
   const ss = SpreadsheetApp.getActive();
   const inventorySheet = ss.getSheetByName("Inventory");
   const itemSheet = ss.getSheetByName("ItemMaster");
-  const equipSheet = ss.getSheetByName("EquipmentMaster");
 
-  // 讀 Inventory
   const invData = inventorySheet.getDataRange().getValues();
   const invHeaders = invData[0];
   const invRows = invData.slice(1);
 
-  // ItemMaster
   const itemData = itemSheet.getDataRange().getValues();
   const itemHeaders = itemData[0];
   const itemMap = {};
@@ -857,80 +635,42 @@ function getInventory() {
     itemMap[obj.ItemID] = obj;
   });
 
-  // EquipmentMaster
-  const equipData = equipSheet.getDataRange().getValues();
-  const equipHeaders = equipData[0];
-  const equipMap = {};
-  equipData.slice(1).forEach(row => {
-    const obj = {};
-    equipHeaders.forEach((k, i) => obj[k] = row[i]);
-    equipMap[obj.EquipmentID] = obj;
-  });
+  return invRows.map((row, idx) => {
+    const inv = {};
+    invHeaders.forEach((k, i) => inv[k] = row[i]);
+    const id = inv.ItemID;
+    const count = parseInt(inv.Count || 0);
 
-const result = invRows.map((row, idx) => {
-  const inv = {};
-  invHeaders.forEach((k, i) => inv[k] = row[i]);
-  const id = inv.ItemID;
-  const count = parseInt(inv.Count || 0);
-  const equipped = inv.Equipped || false;
+    const base = {
+      ItemID: id,
+      Count: count,
+      rowIndex: idx,
+      Equipped: false,
+      SellPrice: 0,
+      HonorSellPrice: 0,
+    };
 
-  // 👇 加入售價取得邏輯
-  let sellPrice = 0;
-  let honorSellPrice = 0;
-
-  if (itemMap[id]) {
-    sellPrice = parseInt(itemMap[id].SellPrice || 0);
-    honorSellPrice = parseInt(itemMap[id].HonorSellPrice || 0);
-  } else if (equipMap[id]) {
-    sellPrice = parseInt(equipMap[id].SellPrice || 0);
-    honorSellPrice = parseInt(equipMap[id].HonorSellPrice || 0);
-  }
-
-  let merged = {
-    ItemID: id,
-    Count: count,
-    Equipped: equipped,
-    SellPrice: sellPrice,
-    HonorSellPrice: honorSellPrice,
-    rowIndex: idx,
-  };
-
-
-    if (itemMap[id]) {
-      // 🔹 來自 ItemMaster（消耗品、卷）
-      Object.assign(merged, {
-        ItemName: itemMap[id].ItemName || id,
-        ItemType: itemMap[id].ItemType || "Item",
-        Effect: itemMap[id].Effect || "",
-        Description: itemMap[id].Description || "",
-        IsVirtual: itemMap[id].IsVirtual || "Yes"
-      });
-    } else if (equipMap[id]) {
-      // 🔹 來自 EquipmentMaster（裝備）
-      Object.assign(merged, {
-        ItemName: equipMap[id].Name || id,
-        ItemType: "Equip",
-        Effect: generateEffectFromEquip(equipMap[id]),
-        Description: "裝備道具，加成能力",
-        Slot: equipMap[id].Slot
+    const ref = itemMap[id];
+    if (ref) {
+      Object.assign(base, {
+        ItemName: ref.ItemName || id,
+        ItemType: ref.ItemType || "Item",
+        Description: ref.Description || "",
+        Effect: ref.Effect || "",
+        SellPrice: parseInt(ref.SellPrice || 0),
+        HonorSellPrice: parseInt(ref.HonorSellPrice || 0)
       });
     } else {
-      // ❌ 未知物品
-      merged.ItemName = id;
-      merged.ItemType = "Unknown";
-      merged.Description = "❓ 無法辨識物品";
+      base.ItemName = id;
+      base.ItemType = "Unknown";
+      base.Description = "❓ 無資料";
     }
 
-    return merged;
+    return base;
   });
-
-  return result;
 }
 
-function generateEffectFromEquip(row) {
-  const boostFields = Object.keys(row).filter(k => k.endsWith("Boost") && row[k]);
-  return boostFields.map(k => `${k}+${row[k]}`).join(",");
-}
+
 function getFieldMapping() {
   const sheet = SpreadsheetApp.getActive().getSheetByName("FieldMapping");
   const values = sheet.getDataRange().getValues();
@@ -1097,70 +837,115 @@ function sellItem(itemID, amount) {
 
   return `✅ 已販售 ${itemName} x${amount}`;
 }
-function unequip(slot) {
+function getEquipOptions(slot) {
   const ss = SpreadsheetApp.getActive();
-  const profileSheet = ss.getSheetByName("Profile");
-  const inventorySheet = ss.getSheetByName("Inventory");
+  const invS = ss.getSheetByName("Inventory");
+  const eqS = ss.getSheetByName("EquipmentMaster");
+  const profS = ss.getSheetByName("Profile");
 
-  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const slotCol = profileHeaders.indexOf(slot);
-  if (slotCol === -1) throw new Error("❌ Profile 中找不到欄位: " + slot);
-
-  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-  const oldEquipID = profileRow[slotCol];
-
-  const invData = inventorySheet.getDataRange().getValues();
-  const invHeaders = invData[0];
-  const idCol = invHeaders.indexOf("ItemID");
-  const equippedCol = invHeaders.indexOf("Equipped");
-
-  for (let i = 1; i < invData.length; i++) {
-    if (invData[i][idCol] === oldEquipID) {
-      inventorySheet.getRange(i + 1, equippedCol + 1).setValue(false);
-      break;
-    }
-  }
-
-  profileSheet.getRange(2, slotCol + 1).setValue('');
-  return { success: true };
-}
-function getAvailableEquipments(slot) {
-  const ss = SpreadsheetApp.getActive();
-  const invSheet = ss.getSheetByName("Inventory");
-  const equipSheet = ss.getSheetByName("EquipmentMaster");
-
-  const invData = invSheet.getDataRange().getValues();
-  const invHeaders = invData[0];
+  const invData = invS.getDataRange().getValues();
+  const invHead = invData[0];
   const invRows = invData.slice(1);
 
-  const idCol = invHeaders.indexOf("ItemID");
-  const equippedCol = invHeaders.indexOf("Equipped");
+  const eqData = eqS.getDataRange().getValues();
+  const eqHead = eqData[0];
+  const eqMap = {};
+  eqData.slice(1).forEach(row => {
+    const id = row[eqHead.indexOf("EquipmentID")];
+    eqMap[id] = {};
+    eqHead.forEach((k, i) => eqMap[id][k] = row[i]);
+  });
 
-  const equippedIDs = invRows
-    .filter(r => String(r[equippedCol]).toLowerCase() !== 'true')
-    .map(r => r[idCol]);
+  const profRow = profS.getRange(2, 1, 1, profS.getLastColumn()).getValues()[0];
+  const profHead = profS.getRange(1, 1, 1, profRow.length).getValues()[0];
+  const profile = {};
+  profHead.forEach((k, i) => profile[k] = profRow[i]);
 
-  const equipData = equipSheet.getDataRange().getValues();
-  const equipHeaders = equipData[0];
-  const slotCol = equipHeaders.indexOf("Slot");
+  const result = [];
 
-  const candidates = equipData
-    .slice(1)
-    .filter(row =>
-      equippedIDs.includes(row[0]) &&
-      row[slotCol] === slot
-    )
-    .map(row => {
-      const obj = {};
-      equipHeaders.forEach((k, i) => obj[k] = row[i]);
-      return obj;
-    });
+  let currentEquip = null;
 
-  Logger.log("📌 slot:", slot);
-  Logger.log("📌 符合未裝備 ID:", equippedIDs);
-  Logger.log("📌 選出候選裝備數量:", candidates.length);
+  invRows.forEach(row => {
+    const obj = {};
+    invHead.forEach((k, i) => obj[k] = row[i]);
+    const itemId = obj.ItemID;
+    const equipped = obj.Equipped === true || obj.Equipped === "TRUE";
+    const equip = eqMap[itemId];
+    if (!equip) return;
+    if (equip.Slot !== slot) return;
 
-  return { candidates };
+    const merged = { ...equip, InventoryRow: obj };
+
+    // 判斷能否裝備
+    let canEquip = true;
+    let reason = '';
+
+    const lvlChecks = [
+      ["RequireIntelligenceLevel", "IntelligenceLevel"],
+      ["RequirePhysicalLevel", "PhysicalLevel"],
+      ["RequireGraceLevel", "GraceLevel"],
+      ["RequireSensitivityLevel", "SensitivityLevel"],
+      ["RequireCreativityLevel", "CreativityLevel"],
+      ["RequiredAdventureLevel", "AdventureLevel"]
+    ];
+
+    for (let [eqKey, profKey] of lvlChecks) {
+      const need = parseInt(equip[eqKey] || 0);
+      const has = parseInt(profile[profKey] || 0);
+      if (need > 0 && has < need) {
+        canEquip = false;
+        reason = `${mapFieldToName(profKey)}需達 ${need}`;
+        break;
+      }
+    }
+
+    merged.canEquip = canEquip;
+    merged.reason = reason;
+
+    if (equipped && equip.Slot === slot) {
+      currentEquip = merged;
+    }
+
+    result.push(merged);
+  });
+
+  return {
+    currentEquip: currentEquip,
+    options: result
+  };
 }
+function getEquippedInfo() {
+  const ss = SpreadsheetApp.getActive();
+  const invS = ss.getSheetByName("Inventory");
+  const eqS = ss.getSheetByName("EquipmentMaster");
 
+  const invData = invS.getDataRange().getValues();
+  const invHead = invData[0];
+  const invRows = invData.slice(1);
 
+  const eqData = eqS.getDataRange().getValues();
+  const eqHead = eqData[0];
+  const eqMap = {};
+  eqData.slice(1).forEach(row => {
+    const obj = {};
+    eqHead.forEach((k, i) => obj[k] = row[i]);
+    eqMap[obj.EquipmentID] = obj;
+  });
+
+  const result = [];
+
+  invRows.forEach(row => {
+    const obj = {};
+    invHead.forEach((k, i) => obj[k] = row[i]);
+    const id = obj.ItemID;
+    const isEquipped = obj.Equipped === true || obj.Equipped === "TRUE";
+    const equip = eqMap[id];
+    if (isEquipped && equip) {
+      result.push({ ...equip, InventoryRow: obj });
+    }
+  });
+
+  return {
+    equippedList: result
+  };
+}
