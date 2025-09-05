@@ -248,6 +248,7 @@ function getMissionList() {
   const missionSheet = ss.getSheetByName("MissionCenter");
   const profileSheet = ss.getSheetByName("Profile");
   const doneTasksSheet = ss.getSheetByName("DailyTasks");
+  const skillSheet = ss.getSheetByName("SkillMaster"); // ✅ 1. 讀取技能表
 
   const missionData = missionSheet.getDataRange().getValues();
   const missionHeaders = missionData[0];
@@ -258,6 +259,20 @@ function getMissionList() {
     if (idx === -1) throw new Error(`❌ 找不到欄位：「${field}」`);
     return row[idx];
   };
+
+  // ✅ 2. 建立技能資料的快取 Map，方便快速查找
+  const skillData = skillSheet.getDataRange().getValues();
+  const skillHeaders = skillData[0];
+  const skillMap = {};
+  skillData.slice(1).forEach(row => {
+    const skillId = row[skillHeaders.indexOf("SkillID")];
+    if (skillId) {
+      skillMap[skillId] = {
+        totalDone: parseInt(row[skillHeaders.indexOf("TotalDoneCount")] || 0),
+        streak: parseInt(row[skillHeaders.indexOf("StreakCount")] || 0)
+      };
+    }
+  });
 
   const profileRow = profileSheet.getDataRange().getValues()[1];
   const profileHeaders = profileSheet.getRange(1, 1, 1, profileRow.length).getValues()[0];
@@ -284,14 +299,43 @@ function getMissionList() {
     const lastClaimed = getMissionField(row, "LastClaimedDate");
 
     let fulfilled = false;
+    let currentProgress = 0; // ✅ 3. 新增變數
+    let targetValue = 1;     // ✅ 3. 新增變數
+
     if (conditionType === "DailyTaskDoneCount") {
-      fulfilled = totalTaskDone >= parseInt(param);
+      currentProgress = totalTaskDone;
+      targetValue = parseInt(param);
+      fulfilled = currentProgress >= targetValue;
     } else if (conditionType === "TaskDoneToday") {
       fulfilled = todayTaskIds.includes(param);
+      currentProgress = fulfilled ? 1 : 0;
+      targetValue = 1;
     } else if (conditionType === "TaskDoneCount") {
       const [taskId, count] = param.split(":");
       const taskRow = dailyData.find(r => r[0] === taskId);
-      fulfilled = taskRow && parseInt(taskRow[5] || 0) >= parseInt(count);
+      currentProgress = taskRow ? parseInt(taskRow[5] || 0) : 0;
+      targetValue = parseInt(count);
+      fulfilled = currentProgress >= targetValue;
+    } else if (conditionType === "TotalDoneCount") { // ✅ 變更：直接使用欄位名稱，更直觀
+      const [skillId, count] = param.split(":");
+      targetValue = parseInt(count);
+      const skillInfo = skillMap[skillId];
+      if (skillInfo) {
+        currentProgress = skillInfo.totalDone;
+      } else {
+        currentProgress = 0; // 找不到技能，進度為 0
+      }
+      fulfilled = currentProgress >= targetValue;
+    } else if (conditionType === "StreakCount") { // ✅ 變更：直接使用欄位名稱，更直觀
+      const [skillId, count] = param.split(":");
+      targetValue = parseInt(count);
+      const skillInfo = skillMap[skillId];
+      if (skillInfo) {
+        currentProgress = skillInfo.streak;
+      } else {
+        currentProgress = 0;
+      }
+      fulfilled = currentProgress >= targetValue;
     }
 
     let claimed = false;
@@ -302,25 +346,33 @@ function getMissionList() {
     }
 
     let rewardText = "";
+    const rewardJsonString = getMissionField(row, "獎勵") || "{}";
     try {
-      const rewardObj = JSON.parse(getMissionField(row, "獎勵") || "{}");
-      rewardText = Object.entries(rewardObj)
-        .map(([key, val]) => `+${val} ${key}`)
-        .join(" / ");
+      const rewardObj = JSON.parse(rewardJsonString);
+      // 檢查確保解析出來的是一個物件
+      if (typeof rewardObj === 'object' && rewardObj !== null && !Array.isArray(rewardObj)) {
+        rewardText = Object.entries(rewardObj)
+          .map(([key, val]) => `+${val} ${key}`)
+          .join(" / ");
+      } else {
+        rewardText = rewardJsonString; // 如果不是物件，直接顯示原始文字
+      }
     } catch (e) {
-      rewardText = "❌ 獎勵格式錯誤";
+      rewardText = `${rewardJsonString} (❌ 獎勵格式錯誤)`;
     }
 
     return {
       id: missionId,
       name: name,
-      description: `🎯 ${name}`,
+      description: name, // 直接使用任務名稱，避免前端顯示重複
       rewardText: rewardText,
       fulfilled: fulfilled,
       claimed: claimed,
       displayOrder: displayOrder,
       rowIndex: i,
-      type: type // 加入類型給一鍵領取判斷用
+      type: type, // 加入類型給一鍵領取判斷用
+      currentProgress: currentProgress, // ✅ 5. 回傳進度
+      targetValue: targetValue        // ✅ 5. 回傳目標
     };
   });
 

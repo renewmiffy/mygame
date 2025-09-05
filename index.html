@@ -450,7 +450,6 @@ body {
   </div>
 </div>
 
-  </div>
   <div class="side-bar">
     <div class="side-item">🎨 換裝</div>
     <div class="side-item">🏅 成就</div>
@@ -499,11 +498,6 @@ body {
 
 
   </div>
-</div>
-<!-- 任務清單容器 -->
-<div id="mission-list-container">
-  <div id="mission-list-daily" class="tab-content"></div>
-  <div id="mission-list-achievement" class="tab-content hidden"></div>
 </div>
 <div id="daily-modal" class="adventure-modal hidden">
   <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
@@ -796,7 +790,7 @@ function renderMissionList(missions) {
   dailyBox.innerHTML = '';  // 清空
   achievementBox.innerHTML = '';
 
-  const renderTable = (targetBox, filteredMissions, claimAllFn) => {
+  const renderTable = (targetBox, filteredMissions) => {
     if (!filteredMissions.length) {
       targetBox.innerHTML = '<div>目前沒有任務</div>';
       return;
@@ -804,12 +798,13 @@ function renderMissionList(missions) {
 
     let html = `<table class="mission-table">
       <thead>
-        <tr><th>📌 任務名稱</th><th>🧾 說明</th><th>🎁 獎勵</th><th>✅ 狀態</th><th>操作</th></tr>
+        <tr><th>📌 任務</th><th>🎁 獎勵</th><th>✅ 狀態</th><th>操作</th></tr>
       </thead><tbody>`;
 
     filteredMissions.forEach(m => {
       let statusText = '';
       let button = '';
+      let progressHtml = '';
 
       if (m.claimed) {
         statusText = "✅ 已領取";
@@ -818,13 +813,25 @@ function renderMissionList(missions) {
         statusText = "✅ 已完成";
         button = `<button class="btn-claim" onclick="claimDailyTask('${m.id}')">領取</button>`;
       } else {
-        statusText = "⏳ 未完成";
+        const progress = m.currentProgress || 0;
+        const target = m.targetValue || 1;
+        // 只有目標大於 1 (非單次任務) 才顯示進度
+        if (target > 1) {
+          statusText = `⏳ 進行中 (${progress}/${target})`;
+          const percentage = (progress / target) * 100;
+          progressHtml = `
+            <div style="width: 90%; margin: 4px auto 0 0; height: 6px; background-color: #e0e0e0; border-radius: 3px; overflow: hidden;">
+              <div style="width: ${percentage}%; height: 100%; background-color: #4caf50; border-radius: 3px;"></div>
+            </div>
+          `;
+        } else {
+          statusText = "⏳ 未完成";
+        }
         button = `<button class="btn-disabled">尚未完成</button>`;
       }
 
       html += `<tr>
-        <td>${m.name}</td>
-        <td>${m.description}</td>
+        <td>${m.name}${progressHtml}</td>
         <td>${
   (m.rewardText || '')
     .replace(/\+(\d+)\s(\w+)/g, (_, val, field) => `+${val} ${mapFieldToName(field)}`)
@@ -836,20 +843,20 @@ function renderMissionList(missions) {
     });
 
     html += `</tbody></table>
-      </div>`;
+      `;
 
     targetBox.innerHTML = html;
   };
 
-  renderTable(dailyBox, missions.filter(m => m.id.startsWith("D")), "claimAllDailyTasks()");
-  renderTable(achievementBox, missions.filter(m => !m.id.startsWith("D")), "claimAllAchievementTasks()");
+  renderTable(dailyBox, missions.filter(m => m.type === 'Daily'));
+  renderTable(achievementBox, missions.filter(m => m.type === 'Achievement'));
 }
 
 
 function switchMissionTab(tab) {
   const dailyTab = document.getElementById('mission-list-daily');
   const achTab = document.getElementById('mission-list-achievement');
-  const buttons = document.querySelectorAll('.tab-button');
+  const buttons = document.querySelectorAll('#mission-modal .tab-button');
 
   buttons.forEach(btn => btn.classList.remove('active'));
   if (tab === 'daily') {
