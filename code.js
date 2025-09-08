@@ -7,73 +7,45 @@ function getProfileData() {
   const ss = SpreadsheetApp.openById('1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs');
   const sheet = ss.getSheetByName('Profile');
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  
-  // --- 1. 檢查是否需要執行每日結算 (方便測試) ---
-  let profileRow = sheet.getRange(2, 1, 1, headers.length).getValues()[0];
-  let initialProfile = {};
-  headers.forEach((key, i) => initialProfile[key] = profileRow[i]);
+  const row = sheet.getRange(2, 1, 1, sheet.getLastColumn()).getValues()[0];
 
-  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
-  const lastUpdateDate = initialProfile.LastUpdateDate;
-  const lastUpdateStr = (lastUpdateDate instanceof Date) 
-    ? Utilities.formatDate(lastUpdateDate, Session.getScriptTimeZone(), "yyyy/MM/dd") 
-    : "";
-
-  if (lastUpdateStr !== todayStr) {
-    Logger.log(`[getProfileData] 偵測到今天尚未結算 (上次結算: ${lastUpdateStr})，正在執行 applyEndOfDayUpdates()...`);
-    applyEndOfDayUpdates(); // 執行每日結算
-    // 結算後，必須重新讀取資料
-    profileRow = sheet.getRange(2, 1, 1, headers.length).getValues()[0]; 
-    Logger.log(`[getProfileData] 每日結算執行完畢，已重新讀取資料。`);
-  }
-
-  // --- 2. 處理並回傳最新的玩家資料 ---
   const profile = {};
-  headers.forEach((key, i) => profile[key] = profileRow[i]);
+  headers.forEach((key, i) => profile[key] = row[i]);
 
   const birthdayFormatted = (profile.birthday instanceof Date)
     ? Utilities.formatDate(profile.birthday, Session.getScriptTimeZone(), "yyyy/MM/dd")
     : (profile.birthday || '');
 
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
   const lastSurveyDateFormatted = (profile.LastSurveyDate instanceof Date)
     ? Utilities.formatDate(profile.LastSurveyDate, Session.getScriptTimeZone(), "yyyy/MM/dd")
     : (profile.LastSurveyDate || '');
-  const surveyFilledToday = (lastSurveyDateFormatted === todayStr);
-
-  // --- 3. 狀態圖片更換邏輯 ---
-  const activeStatuses = evaluateStatusRules(profile);
-  Logger.log(`[getProfileData] 評估出的生效狀態: ${JSON.stringify(activeStatuses)}`); // ✅ 新增偵錯日誌
-  const overrideStatus = activeStatuses
-    .filter(s => s.CharacterOverrideFile)
-    .sort((a, b) => (a.Priority || 999) - (b.Priority || 999))[0];
-
-  let finalCharacterFile = profile.currentCharacter;
-  if (overrideStatus) {
-    finalCharacterFile = overrideStatus.CharacterOverrideFile;
-    Logger.log(`狀態圖片覆蓋：因 [${overrideStatus.狀態名稱}]，角色圖片更換為 ${finalCharacterFile}`);
-  }
-
-  // ✅ 新增：將狀態列表也一併回傳
-  const statusList = activeStatuses.map(status => ({
-    StatusName: status.狀態名稱,
-    Effect: status.效果說明
-  }));
+  const surveyFilledToday = (lastSurveyDateFormatted === today);
 
   return {
     playerName: profile.PlayerName,
     birthday: birthdayFormatted,
     coins: profile.Coins,
     honorPoints: profile.HonorPoints,
+    todayActionPoints: profile.TodayActionPoints,
     cleanliness: profile.Cleanliness,
     mood: profile.Mood,
     energy: profile.Energy,
     health: profile.Health,
     selfDiscipline: profile.SelfDiscipline, 
     backgroundUrl: "https://renewmiffy.github.io/mygame/img/bg/" + profile.currentBackground,
-    characterUrl: "https://renewmiffy.github.io/mygame/img/char/" + finalCharacterFile,
-    surveyFilledToday: surveyFilledToday,
-    debugLog: activeStatuses.debugLog, // ✅ 將偵錯日誌一起回傳
-    StatusList: statusList // ✅ 新增
+    characterUrl: "https://renewmiffy.github.io/mygame/img/char/" + profile.currentCharacter,
+    Intelligence: profile.Intelligence,
+    IntelligenceLevel: profile.IntelligenceLevel,
+    Physical: profile.Physical,
+    PhysicalLevel: profile.PhysicalLevel,
+    Sensitivity: profile.Sensitivity,
+    SensitivityLevel: profile.SensitivityLevel,
+    Creativity: profile.Creativity,
+    CreativityLevel: profile.CreativityLevel,
+    Grace: profile.Grace,
+    GraceLevel: profile.GraceLevel,
+    surveyFilledToday: surveyFilledToday
   };
 }
 function getSurveyQuestions() {
@@ -144,6 +116,11 @@ function handleSurvey(formData) {
     }
   } catch (e) {}
 
+  const baseAP = 2;
+  const energyAP = Math.min(parseFloat(profile.Energy || 0), 100) / 20;  // 最高給 5 點 A
+  const selfDisciplineAP = Math.min(parseFloat(profile.SelfDiscipline || 0), 1) * 2;
+  const dailyDoneAP = parseFloat(profile.DailyTaskDoneCount || 0) * 0.2;
+  profile.TodayActionPoints = Math.floor(baseAP + energyAP + selfDisciplineAP + dailyDoneAP);
   profile.Cleanliness = (parseFloat(profile.Cleanliness) || 0) - 20;
   profile.LastSurveyDate = today;
 
@@ -190,6 +167,12 @@ function applyAttributeLimit(profile) {
     Energy: [0, 100],
     Health: [0, 100],
     SelfDiscipline: [0, 100],
+    Intelligence: [0, 999],
+    Physical: [0, 999],
+    Creativity: [0, 999],
+    Sensitivity: [0, 999],
+    Grace: [0, 999],
+    TodayActionPoints: [0, 99]
   };
 
   Object.entries(limits).forEach(([field, [min, max]]) => {
@@ -216,7 +199,8 @@ function writeProfile(profile, source = "系統") {
   // ✅ 關鍵屬性欄位（才寫入 log）
   const fieldsToLog = [
     "Cleanliness", "Mood", "Energy", "Health", "SelfDiscipline",
-    "Coins", "HonorPoints"
+    "Intelligence", "Physical", "Creativity", "Sensitivity", "Grace",
+    "Coins", "HonorPoints", "TodayActionPoints"
   ];
 
   const logHeaders = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
@@ -650,79 +634,6 @@ function getAttributeMap() {
 }
 
 
-/**
- * [核心狀態評估函式] 根據玩家屬性，回傳所有觸發的狀態規則。
- * @param {object} profile - 玩家的 profile 物件。
- * @returns {Array<object>} - 一個包含所有被觸發的狀態規則物件的陣列。
- */
-function evaluateStatusRules(profile) {
-  const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
-  const statusSheet = ss.getSheetByName("StatusRules");
-  if (!statusSheet) {
-    Logger.log("⚠️ StatusRules 工作表不存在。");
-    return [];
-  }
-
-  const data = statusSheet.getDataRange().getValues();
-  const headers = data[0].map(h => h.trim()); // ✅ 清理標頭前後的空白
-  const rules = data.slice(1);
-  const activeStatuses = [];
-  const debugLog = []; // ✅ 新增一個陣列來收集日誌
-
-  Logger.log("--- 開始評估狀態規則 ---");
-
-  rules.forEach((ruleRow, index) => {
-    const rule = {};
-    headers.forEach((h, i) => rule[h] = ruleRow[i]);
-
-    const statusName = rule["狀態名稱"] || `規則 #${index + 1}`;
-    const triggerField = rule["觸發屬性"];
-    const comparison = rule["比較符號"];
-    
-    if (!triggerField || !comparison) {
-      debugLog.push(`- [${statusName}] 跳過：觸發屬性或比較符號為空。`);
-      return; // Skip this rule if essential data is missing
-    }
-
-    const playerValue = parseFloat(profile[triggerField]);
-    const threshold = parseFloat(rule["閾值"]);
-
-    debugLog.push(`- 正在檢查 [${statusName}]：屬性=${triggerField}, 條件=${comparison} ${threshold}`);
-
-    if (isNaN(playerValue) || isNaN(threshold)) {
-      debugLog.push(`  - ↳ 跳過：玩家數值 (${profile[triggerField]}) 或閾值 (${rule["閾值"]}) 不是有效的數字。`);
-      return;
-    }
-    
-    debugLog.push(`  - ↳ 比較：玩家的 ${triggerField} (${playerValue}) ${comparison} ${threshold} ?`);
-
-    let isTriggered = false;
-    if (comparison === '<' && playerValue < threshold) isTriggered = true;
-    else if (comparison === '<=' && playerValue <= threshold) isTriggered = true;
-    else if (comparison === '>' && playerValue > threshold) isTriggered = true;
-    else if (comparison === '>=' && playerValue >= threshold) isTriggered = true;
-    else if (comparison === '==' && playerValue == threshold) isTriggered = true;
-
-    if (isTriggered) {
-      debugLog.push(`  - ↳ ✅ 結果：觸發！`);
-      activeStatuses.push({
-        狀態名稱: statusName,
-        屬性影響JSON: rule["屬性影響JSON"],
-        效果說明: rule["效果說明"],
-        Priority: rule["Priority"], // ✅ 新增
-        CharacterOverrideFile: rule["CharacterOverrideFile"] // ✅ 新增
-      });
-    } else {
-      debugLog.push(`  - ↳ ❌ 結果：未觸發。`);
-    }
-  });
-
-  debugLog.push(`--- 狀態評估結束，共觸發 ${activeStatuses.length} 個狀態 ---`);
-  // 將結果和日誌一起回傳
-  activeStatuses.debugLog = debugLog;
-  return activeStatuses; 
-}
-
 function getQuickStatus() {
   const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
   const profileSheet = ss.getSheetByName("Profile");
@@ -731,35 +642,31 @@ function getQuickStatus() {
   const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
   const profile = {};
   profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
- 
-  // ✅ 呼叫新的狀態評估函式
-  const activeStatuses = evaluateStatusRules(profile);
-  const statusList = activeStatuses.map(status => ({
-    StatusName: status.狀態名稱,
-    Effect: status.效果說明
-  }));
 
-  // ✅ 新增：狀態圖片更換邏輯，與 getProfileData() 同步
-  const overrideStatus = activeStatuses
-    .filter(s => s.CharacterOverrideFile)
-    .sort((a, b) => (a.Priority || 999) - (b.Priority || 999))[0];
-
-  let finalCharacterFile = profile.currentCharacter;
-  if (overrideStatus) {
-    finalCharacterFile = overrideStatus.CharacterOverrideFile;
-  }
+  // TODO: 狀態系統尚未實作，未來從 StatusRules 表格評估狀態條件並產生 StatusList
+  // 例如：髒兮兮 / 情緒低落 / 健康不佳 等
+  const statusList = [];
 
   return {
     Coins: profile.Coins || 0,
     HonorPoints: profile.HonorPoints || 0,
+    TodayActionPoints: profile.TodayActionPoints || 0,
     Cleanliness: profile.Cleanliness || 0,
     Mood: profile.Mood || 0,
     Energy: profile.Energy || 0,
     Health: profile.Health || 0,
     SelfDiscipline: profile.SelfDiscipline || 0,
-    StatusList: statusList,
-    // ✅ 新增：回傳計算後的角色圖片 URL
-    characterUrl: "https://renewmiffy.github.io/mygame/img/char/" + finalCharacterFile
+    Intelligence: profile.Intelligence || 0,
+    IntelligenceLevel: profile.IntelligenceLevel || 1,
+    Physical: profile.Physical || 0,
+    PhysicalLevel: profile.PhysicalLevel || 1,
+    Creativity: profile.Creativity || 0,
+    CreativityLevel: profile.CreativityLevel || 1,
+    Sensitivity: profile.Sensitivity || 0,
+    SensitivityLevel: profile.SensitivityLevel || 1,
+    Grace: profile.Grace || 0,
+    GraceLevel: profile.GraceLevel || 1,
+    StatusList: statusList
   };
 }
 function getInventory() {
@@ -799,10 +706,9 @@ function getInventory() {
     if (ref) {
       Object.assign(base, {
         ItemName: ref.ItemName || id,
-        ItemType: ref.ItemType || "Consumable",
+        ItemType: ref.ItemType || "Item",
         Description: ref.Description || "",
         Effect: ref.Effect || "",
-        IsSellable: ref.IsSellable,
         SellPrice: parseInt(ref.SellPrice || 0),
         HonorSellPrice: parseInt(ref.HonorSellPrice || 0)
       });
@@ -835,7 +741,6 @@ function useItem(itemID) {
   const profileSheet = ss.getSheetByName("Profile");
   const inventorySheet = ss.getSheetByName("Inventory");
   const itemSheet = ss.getSheetByName("ItemMaster");
-  const logSheet = ss.getSheetByName("PlayerLog");
 
   const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
   const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
@@ -852,45 +757,28 @@ function useItem(itemID) {
   const count = parseInt(invRows[invIndex][countIdx]);
   if (count <= 0) throw new Error("⚠️ 數量不足");
 
+  // 讀取效果
   const itemData = itemSheet.getDataRange().getValues();
   const itemHeaders = itemData[0];
   const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
-  if (!itemRow) throw new Error("❌ 找不到道具主資料 (ItemMaster)");
+  if (!itemRow) throw new Error("❌ 找不到道具資料");
 
-  const itemMaster = {};
-  itemHeaders.forEach((k, i) => itemMaster[k] = itemRow[i]);
-  const itemName = itemMaster.ItemName || itemID;
-  const itemType = itemMaster.ItemType || 'Consumable';
+  const effectStr = itemRow[itemHeaders.indexOf("Effect")] || '';
+  const effectPairs = effectStr.split(',').map(p => p.trim()).filter(p => p.includes('+'));
+  effectPairs.forEach(pair => {
+    const [field, val] = pair.split('+');
+    profile[field] = (parseFloat(profile[field]) || 0) + parseFloat(val);
+  });
 
-  const effectJson = itemMaster.Effect || '{}';
-  try {
-    const effects = JSON.parse(effectJson);
-    Object.entries(effects).forEach(([field, value]) => {
-      if (profile.hasOwnProperty(field)) {
-        profile[field] = (parseFloat(profile[field]) || 0) + parseFloat(value);
-      } else {
-        Logger.log(`[useItem] 警告：道具 [${itemName}] 的效果欄位 "${field}" 在 Profile 中不存在。`);
-      }
-    });
-  } catch (e) {
-    throw new Error(`❌ 道具 [${itemName}] 的效果格式錯誤 (非 JSON): ${effectJson}`);
-  }
-
+  // 更新 inventory：數量 -1 或刪除
   if (count - 1 <= 0) {
     inventorySheet.deleteRow(invIndex + 2);
   } else {
-    inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - 1);
+    invRows[invIndex][countIdx] = count - 1;
+    inventorySheet.getRange(invIndex + 2, 1, 1, invHeaders.length).setValues([invRows[invIndex]]);
   }
 
-  if (itemType === 'Redeemable') {
-    const logHeaders = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
-    const redemptionLog = { CreatedAt: new Date(), Type: 'redemption', ActionName: `兌換 - ${itemName}`, AffectField: 'ItemID', AffectValue: itemID, Source: '玩家使用兌換券' };
-    const logRowToWrite = logHeaders.map(k => redemptionLog[k] ?? '');
-    logSheet.appendRow(logRowToWrite);
-    writeProfile(profile, `兌換 - ${itemName}`);
-  } else {
-    writeProfile(profile, `使用道具 - ${itemName}`);
-  }
+  writeProfile(profile, "使用道具 - " + itemRow[itemHeaders.indexOf("ItemName")]);
 }
 /**
  * 販售道具／裝備（可指定數量）
@@ -1044,12 +932,23 @@ function getEquipOptions(slot) {
     let canEquip = true;
     let reason = '';
 
-    // 只保留冒險等級檢查，其他屬性等級檢查已移除
-    const need = parseInt(equip["RequiredAdventureLevel"] || 0);
-    const has = parseInt(profile["AdventureLevel"] || 0);
-    if (need > 0 && has < need) {
-      canEquip = false;
-      reason = `冒險等級需達 ${need}`;
+    const lvlChecks = [
+      ["RequireIntelligenceLevel", "IntelligenceLevel"],
+      ["RequirePhysicalLevel", "PhysicalLevel"],
+      ["RequireGraceLevel", "GraceLevel"],
+      ["RequireSensitivityLevel", "SensitivityLevel"],
+      ["RequireCreativityLevel", "CreativityLevel"],
+      ["RequiredAdventureLevel", "AdventureLevel"]
+    ];
+
+    for (let [eqKey, profKey] of lvlChecks) {
+      const need = parseInt(equip[eqKey] || 0);
+      const has = parseInt(profile[profKey] || 0);
+      if (need > 0 && has < need) {
+        canEquip = false;
+        reason = `${mapFieldToName(profKey)}需達 ${need}`;
+        break;
+      }
     }
 
     merged.canEquip = canEquip;
@@ -1101,231 +1000,4 @@ function getEquippedInfo() {
   return {
     equippedList: result
   };
-}
-
-// --- Daily Automation & Event System ---
-
-/**
- * [核心每日自動化函式] 執行每日結算與事件檢查。
- * 應設定為每日凌晨自動執行的時間觸發器。
- * 功能：
- * 1. 檢查並觸發特殊日期事件（生日、節日）。
- * 2. 更新每日天氣並套用效果。
- * 3. 套用每日基礎消耗。
- * 4. 處理未完成任務的懲罰 (此處為範例框架，你可以將之前的懲罰邏輯整合進來)。
- */
-function applyEndOfDayUpdates() {
-  const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
-  const profileSheet = ss.getSheetByName("Profile");
-  const rulesSheet = ss.getSheetByName("GameRules");
-
-  // --- 讀取玩家資料 ---
-  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-  const profile = {};
-  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
-
-  // --- 安全檢查：避免重複執行 ---
-  const lastUpdateDate = profile.LastUpdateDate;
-  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
-  if (lastUpdateDate instanceof Date && Utilities.formatDate(lastUpdateDate, Session.getScriptTimeZone(), "yyyy/MM/dd") === todayStr) {
-    Logger.log("每日結算已執行，跳過。");
-    return;
-  }
-
-  // --- 1. 檢查並觸發特殊日期事件 ---
-  const today = new Date();
-  const todayMMDD = Utilities.formatDate(today, Session.getScriptTimeZone(), "MM/dd");
-
-  // 檢查生日
-  const birthday = profile.birthday;
-  if (birthday instanceof Date) {
-    const birthdayMMDD = Utilities.formatDate(birthday, Session.getScriptTimeZone(), "MM/dd");
-    if (todayMMDD === birthdayMMDD) {
-      triggerEvent('Birthday'); // 觸發事件，不用擔心重複，triggerEvent會處理
-    }
-  }
-
-  // 檢查固定節日
-  if (todayMMDD === "01/01") {
-    triggerEvent('NewYear');
-  }
-  // 你可以繼續增加其他節日，例如：
-  // if (todayMMDD === "12/25") {
-  //   triggerEvent('Christmas');
-  // }
-
-  // --- ✅【修正】重新讀取 Profile ---
-  // 因為 triggerEvent 函式會自己寫入資料，為了避免後續的每日結算使用到舊的、過時的資料（Stale Data），
-  // 我們在這裡重新讀取一次玩家資料，確保接下來的計算是基於最新狀態。
-  const profileRowAfterEvents = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-  profileHeaders.forEach((k, i) => {
-    // 更新 profile 物件，讓它反映 triggerEvent 可能造成的變更
-    profile[k] = profileRowAfterEvents[i];
-  });
-
-  // 這個步驟必須在任何數值變動前執行，以捕捉角色在一天結束時的「快照」狀態
-  const activeStatuses = evaluateStatusRules(profile);
-
-  // --- 3. 處理每日基礎消耗 ---
-  const rulesData = rulesSheet.getDataRange().getValues();
-  rulesData.slice(1).forEach(row => {
-    const [key, value] = row;
-    if (!key) return;
-
-    // 只處理每日基礎消耗
-    if (key.startsWith("DailyConsumption_")) {
-      const field = key.replace("DailyConsumption_", "");
-      if (profile.hasOwnProperty(field)) {
-        profile[field] = (parseFloat(profile[field]) || 0) + (parseFloat(value) || 0);
-      }
-    }
-  });
-
-  // --- 4. 套用已評估狀態的持續效果 ---
-  try {
-    activeStatuses.forEach(status => {
-      const effects = JSON.parse(status.屬性影響JSON || '{}');
-      Object.entries(effects).forEach(([field, value]) => {
-        if (profile.hasOwnProperty(field)) {
-          profile[field] = (parseFloat(profile[field]) || 0) + parseFloat(value);
-        }
-      });
-    });
-  } catch(e) {
-    Logger.log("套用狀態效果時出錯：" + e.message);
-  }
-
-  // --- 5. 處理未完成任務懲罰 ---
-  try {
-    const taskSheet = ss.getSheetByName("DailyTasks");
-    const taskData = taskSheet.getDataRange().getValues();
-    const taskHeaders = taskData[0];
-    const taskRows = taskData.slice(1);
-    
-    const penaltyCol = taskHeaders.indexOf("PenaltyEffects");
-    const lastDoneCol = taskHeaders.indexOf("LastDoneDate");
-    const taskNameCol = taskHeaders.indexOf("任務名稱");
-
-    if (penaltyCol !== -1) {
-      // 定義 "昨天" 的日期字串
-      const yesterdayStr = Utilities.formatDate(new Date(new Date().getTime() - 86400000), Session.getScriptTimeZone(), "yyyy/MM/dd");
-
-      taskRows.forEach(taskRow => {
-        const penaltyJson = taskRow[penaltyCol];
-        if (!penaltyJson) return; // 沒有懲罰設定，直接跳過
-
-        const lastDoneDate = taskRow[lastDoneCol];
-        const lastDoneStr = (lastDoneDate instanceof Date) 
-            ? Utilities.formatDate(lastDoneDate, Session.getScriptTimeZone(), "yyyy/MM/dd") 
-            : "";
-
-        // 如果最後完成日期不是 "昨天"，就代表昨天沒有完成，應予以懲罰。
-        if (lastDoneStr !== yesterdayStr) {
-          try {
-            const penaltyEffects = JSON.parse(penaltyJson);
-            Object.entries(penaltyEffects).forEach(([field, value]) => {
-              if (profile.hasOwnProperty(field)) {
-                profile[field] = (parseFloat(profile[field]) || 0) + (parseFloat(value) || 0);
-              }
-            });
-          } catch (e) {
-            Logger.log(`解析任務 [${taskRow[taskNameCol]}] 的懲罰規則失敗: ${e.message}. 原始字串: "${penaltyJson}"`);
-          }
-        }
-      });
-    }
-  } catch (e) {
-    Logger.log("處理未完成任務懲罰失敗: " + e.message);
-  }
-
-  // --- 6. 寫回 Profile ---
-  profile.LastUpdateDate = new Date(); // 記錄更新日期
-  writeProfile(profile, `每日結算`);
-  Logger.log(`每日結算執行完畢。`);
-}
-
-/**
- * [事件觸發器] 根據事件名稱，給予玩家對應的獎勵。
- * 此函式有防止重複觸發的機制。
- * @param {string} eventName - GameRules 中定義的事件名稱 (例如 "Birthday", "NewYear")。
- * @returns {string} 執行結果的訊息。
- */
-function triggerEvent(eventName) {
-  if (!eventName) return "錯誤：未提供事件名稱。";
-
-  // --- 防止重複觸發 ---
-  if (hasEventBeenTriggeredToday(eventName)) {
-    const msg = `事件 '${eventName}' 今天已經觸發過了。`;
-    Logger.log(msg);
-    return msg;
-  }
-
-  const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
-  const profileSheet = ss.getSheetByName("Profile");
-  const rulesSheet = ss.getSheetByName("GameRules");
-
-  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-  const profile = {};
-  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
-
-  const rulesData = rulesSheet.getDataRange().getValues();
-  const eventPrefix = `EventBonus_${eventName}_`;
-  let eventApplied = false;
-
-  rulesData.slice(1).forEach(row => {
-    const [key, value] = row;
-    if (key && key.startsWith(eventPrefix)) {
-      const field = key.replace(eventPrefix, "");
-      if (profile.hasOwnProperty(field)) {
-        profile[field] = (parseFloat(profile[field]) || 0) + (parseFloat(value) || 0);
-        eventApplied = true;
-      }
-    }
-  });
-
-  if (eventApplied) {
-    // 使用 writeProfile 寫入資料，它會自動產生我們需要的日誌紀錄
-    writeProfile(profile, `事件獎勵 - ${eventName}`);
-    const message = `✅ 事件 [${eventName}] 觸發成功!`;
-    Logger.log(message);
-    return message;
-  } else {
-    const message = `⚠️ 在 GameRules 中找不到事件 [${eventName}] 的獎勵規則。`;
-    Logger.log(message);
-    return message;
-  }
-}
-
-/**
- * [輔助函式] 檢查特定事件今天是否已經觸發過。
- * 透過檢查 PlayerLog 中是否有對應的 "Source" 紀錄來判斷。
- * @param {string} eventName - 要檢查的事件名稱。
- * @returns {boolean} 如果今天已觸發過則返回 true。
- */
-function hasEventBeenTriggeredToday(eventName) {
-  const ss = SpreadsheetApp.openById("1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs");
-  const logSheet = ss.getSheetByName('PlayerLog');
-  if (logSheet.getLastRow() < 2) return false;
-
-  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
-  const data = logSheet.getDataRange().getValues();
-  const headers = data[0];
-  const sourceCol = headers.indexOf('Source');
-  const dateCol = headers.indexOf('CreatedAt');
-  const expectedSource = `事件獎勵 - ${eventName}`;
-
-  // 為提高效率，只檢查最近 50 筆日誌
-  const checkRange = data.slice(Math.max(1, data.length - 50));
-
-  for (const row of checkRange) {
-    const logDate = row[dateCol];
-    if (logDate instanceof Date && row[sourceCol] === expectedSource) {
-      if (Utilities.formatDate(logDate, Session.getScriptTimeZone(), "yyyy/MM/dd") === todayStr) {
-        return true; // 找到今天觸發過的紀錄
-      }
-    }
-  }
-  return false;
 }
