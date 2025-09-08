@@ -387,7 +387,6 @@ body {
     <div class="resources">
       <div>💰 <span id="coins">0</span></div>
       <div>⭐ <span id="honorPoints">0</span></div>
-      <div>AP: <span id="ap">0</span></div>
     </div>
 
    <div class="attributes">
@@ -413,6 +412,9 @@ body {
   </div>
 </div>
 
+    <div class="gear">⚙️</div>
+  </div>
+
 <div id="side-panel">
   <div id="status-box">
     <h4>當前狀態</h4>
@@ -420,17 +422,7 @@ body {
       <!-- 狀態項目由 JS 動態塞 -->
     </div>
   </div>
-
-  <div id="attributes-box">
-    <h4>屬性</h4>
-    <div id="attributes-list">
-      <!-- 屬性項目由 JS 動態塞 -->
-    </div>
-  </div>
 </div>
-
-    <div class="gear">⚙️</div>
-  </div>
 
 <div class="bottom-bar">
 <div class="bottom-item" onclick="openDailyModal()">
@@ -568,20 +560,30 @@ body {
 
 </body>
 <script>
+  // ✅ 新增輔助函式，將後端日誌轉發到瀏覽器 Console
+  function logToConsole(logData) {
+    console.log('[APPS_SCRIPT_LOG]', logData);
+  }
+
   // 頂層開始
 google.script.run
   .withSuccessHandler(function(data) {
     try {
-      console.log('✅ 後端回傳：', data);
+      console.log('✅ getProfileData 回傳：', data);
 
       if (data) {
+        // ✅ 檢查並印出後端傳來的偵錯日誌
+        if (data.debugLog && Array.isArray(data.debugLog)) {
+          console.groupCollapsed("📄 後端狀態評估日誌");
+          data.debugLog.forEach(log => console.log(log));
+          console.groupEnd();
+        }
         document.getElementById('background').src = data.backgroundUrl || '';
         document.getElementById('character').src = data.characterUrl || '';
         document.getElementById('playerName').innerText = data.playerName || '玩家';
         document.getElementById('birthday').innerText = "生日: " + (data.birthday || '未設定');
         document.getElementById('coins').innerText = (data.coins !== undefined) ? data.coins : 0;
         document.getElementById('honorPoints').innerText = (data.honorPoints !== undefined) ? data.honorPoints : 0;
-        document.getElementById('ap').innerText = (!isNaN(data.todayActionPoints)) ? data.todayActionPoints : 0;
 
 const setAttr = (id, value) => {
   const num = parseFloat(value);
@@ -602,7 +604,12 @@ const setAttr = (id, value) => {
         if (!data.surveyFilledToday) {
           openSurveyModal();
         }
-         refreshSidePanel();
+        // ✅ 初始載入時，直接使用 getProfileData 回傳的資料更新側邊欄
+        if (data.StatusList) {
+          updateSidePanel(data);
+        } else {
+          refreshMainGameUI(); // 作為安全備用方案
+        }
       } else {
         showToast("⚠️ 資料為空，請稍後再試");
       }
@@ -995,74 +1002,65 @@ function claimDailyTask(missionId) {
 
 
 
-function refreshHeaderBar() {
+function refreshMainGameUI() {
   google.script.run
     .withSuccessHandler(data => {
-      console.log("🔄 refreshHeaderBar:", data);  // ✅ 除錯用
-
-      document.getElementById('ap').innerText = Math.floor(data.TodayActionPoints || 0);
-      document.getElementById('coins').innerText = data.Coins;
-      document.getElementById('honorPoints').innerText = data.HonorPoints;
-
-      // ✅ 對應 QuickStatus 傳回的是 Cleanliness, Mood 等 ➜ 要轉成對應的 ID
-      const fieldToIdMap = {
-        Cleanliness: 'cleanliness',
-        Mood: 'mood',
-        Energy: 'energy',
-        Health: 'health',
-        SelfDiscipline: 'selfDiscipline'
-      };
-
-      Object.entries(fieldToIdMap).forEach(([field, id]) => {
-        const num = Number(data[field]) || 0;
-        const bar = document.getElementById(id);
-        const label = document.getElementById(`${id}-label`);
-        if (bar) bar.style.width = `${num}%`;
-        if (label) {
-          const zh = {
-            cleanliness: "清潔度",
-            mood: "心情",
-            energy: "精力",
-            health: "健康",
-            selfDiscipline: "自律"
-          }[id];
-          label.innerText = `${zh} ${Math.round(num)}/100`;
-        }
-      });
+      console.log("🔄 refreshMainGameUI (getQuickStatus):", data);
+      // ✅ 核心修正：更新角色圖片
+      if (data.characterUrl) {
+        document.getElementById('character').src = data.characterUrl;
+      }
+      // 更新 Header Bar
+      updateHeaderBar(data);
+      // 更新 Side Panel
+      updateSidePanel(data);
     })
     .withFailureHandler(err => {
-      console.error("❌ refreshHeaderBar 失敗：", err.message);
-      showToast("❌ 資料更新失敗：" + err.message);
+      console.error("❌ refreshMainGameUI 失敗：", err.message);
+      showToast("❌ 介面更新失敗：" + err.message);
     })
     .getQuickStatus();
-}
 
-
-function refreshSidePanel() {
-  google.script.run.withSuccessHandler(function(data) {
-    const attrBox = document.getElementById('attributes-list');
-    attrBox.innerHTML = `
-      <div class="attribute-item">📚 智力 Lv.${data.IntelligenceLevel} ➜ ${Math.round(data.Intelligence)}</div>
-      <div class="attribute-item">🏃 體力 Lv.${data.PhysicalLevel} ➜ ${Math.round(data.Physical)}</div>
-      <div class="attribute-item">🎨 創造 Lv.${data.CreativityLevel} ➜ ${Math.round(data.Creativity)}</div>
-      <div class="attribute-item">💖 感受 Lv.${data.SensitivityLevel} ➜ ${Math.round(data.Sensitivity)}</div>
-      <div class="attribute-item">🗣️ 氣質 Lv.${data.GraceLevel} ➜ ${Math.round(data.Grace)}</div>
-    `;
-
-    const statusBox = document.getElementById('status-list');
-    statusBox.innerHTML = (data.StatusList.length > 0)
-      ? data.StatusList.map(s => `<div class="status-item">⚠️ ${s.StatusName}<div class="status-detail">${s.Effect}</div></div>`).join('')
-      : `<div class="status-item">🟢 無異常狀態</div>`;
-  }).getQuickStatus();
-}
-function refreshMainGameUI() {
-  refreshHeaderBar();
-  refreshSidePanel();
+  // 最近紀錄可以獨立刷新
   const content = document.getElementById('recent-log-content');
   if (!content.classList.contains('hidden')) {
     refreshRecentLog();
   }
 }
+
+// ✅ 新函式：只負責渲染 Header Bar，不抓資料
+function updateHeaderBar(data) {
+  document.getElementById('coins').innerText = data.Coins;
+  document.getElementById('honorPoints').innerText = data.HonorPoints;
+
+  const fieldToIdMap = {
+    Cleanliness: 'cleanliness',
+    Mood: 'mood',
+    Energy: 'energy',
+    Health: 'health',
+    SelfDiscipline: 'selfDiscipline'
+  };
+
+  Object.entries(fieldToIdMap).forEach(([field, id]) => {
+    const num = Number(data[field]) || 0;
+    const bar = document.getElementById(id);
+    const label = document.getElementById(`${id}-label`);
+    if (bar) bar.style.width = `${num}%`;
+    if (label) {
+      const zh = { cleanliness: "清潔度", mood: "心情", energy: "精力", health: "健康", selfDiscipline: "自律" }[id];
+      label.innerText = `${zh} ${Math.round(num)}/100`;
+    }
+  });
+}
+
+// ✅ 新函式：只負責渲染 Side Panel，不抓資料
+function updateSidePanel(data) {
+  const statusBox = document.getElementById('status-list');
+  statusBox.innerHTML = (data.StatusList && data.StatusList.length > 0)
+    ? data.StatusList.map(s => `<div class="status-item">⚠️ ${s.StatusName}<div class="status-detail">${s.Effect}</div></div>`).join('')
+    : `<div class="status-item">🟢 無異常狀態</div>`;
+}
+
 function refreshRecentLog() {
   google.script.run
     .withSuccessHandler(renderRecentLog)
@@ -1103,18 +1101,18 @@ function renderBagItems(items) {
   const group = { all: [], item: [], ticket: [] };
 
   items.forEach(i => {
-    const type = (i.ItemType || '').toLowerCase();
-    const icon = getItemIcon(type);
+    const itemType = i.ItemType || 'Consumable';
+    const icon = getItemIcon(itemType);
     const label = `${icon} ${i.ItemName} x${i.Count}`;
     const showDetail = `showItemDetail(${JSON.stringify(i).replace(/"/g, '&quot;')})`;
 
-    const canSell = i.Count > 1;
+    const canSell = i.IsSellable === true && (i.SellPrice > 0 || i.HonorSellPrice > 0);
 
     const sellBtn = canSell
       ? `<button onclick="showSellModal('${i.ItemID}',
             decodeURIComponent('${encodeURIComponent(i.ItemName)}'),
             ${i.Count})">販售</button>`
-      : `<button class="btn-disabled" disabled>無法販售</button>`;
+      : `<button class="btn-disabled" disabled>不可販售</button>`;
 
     const actionBtn = `<button onclick="useItem('${i.ItemID}')">使用</button>`;
 
@@ -1125,21 +1123,22 @@ function renderBagItems(items) {
       </div>`;
 
     group.all.push(html);
-    if (type.includes('ticket')) group.ticket.push(html);
-    else group.item.push(html);
+    if (itemType === 'Redeemable') {
+      group.ticket.push(html);
+    } else {
+      group.item.push(html);
+    }
   });
 
   ['all', 'item', 'ticket'].forEach(t => {
     document.getElementById('bag-list-' + t).innerHTML = group[t].join('') || '<div>目前沒有物品</div>';
   });
-
 }
 
-
-
-
-function getItemIcon(type) {
-  return { item: '🧃', ticket: '🎟️' }[type] || '🎒';
+function getItemIcon(itemType) {
+  if (itemType === 'Redeemable') return '🎟️';
+  if (itemType === 'Consumable') return '🧃';
+  return '🎒';
 }
 
 function showItemDetail(item) {
@@ -1165,12 +1164,21 @@ function showItemDetail(item) {
 function parseEffects(effectStr) {
   if (!effectStr) return [];
   try {
-    return effectStr.split(',').map(pair => {
-      const [field, value] = pair.split('+');
-      return `${mapFieldToName(field)} +${value}`;
+    const effects = JSON.parse(effectStr);
+    if (typeof effects !== 'object' || effects === null || Array.isArray(effects)) {
+      return [String(effectStr)];
+    }
+    const lines = Object.entries(effects).map(([field, value]) => {
+      const numValue = Number(value);
+      if (isNaN(numValue)) {
+        return `${mapFieldToName(field)}: ${value}`;
+      }
+      const prefix = numValue >= 0 ? '+' : '';
+      return `${mapFieldToName(field)} ${prefix}${numValue}`;
     });
+    return lines.length > 0 ? lines : ['無特殊效果'];
   } catch (e) {
-    return ['❌ 效果解析錯誤'];
+    return [String(effectStr)];
   }
 }
 
@@ -1222,35 +1230,13 @@ function confirmSell() {
   google.script.run
     .withSuccessHandler(msg => {
       showToast(msg || "✅ 已販售！");
-      refreshCoinsAndHonor();
+      refreshMainGameUI(); // ✅ 改為呼叫主刷新函式
       refreshRecentLog();
       openBag();
     })
     .withFailureHandler(err => showToast(err.message || "❌ 失敗：" + err.message))
     .sellItem(itemID, qty);                 // ← 傳 qty
 }
-
-
-function refreshCoinsAndHonor() {
-  google.script.run.withSuccessHandler(data => {
-    if (data) {
-      if (data.Coins !== undefined) {
-        document.getElementById('coins').innerText = data.Coins;
-      }
-      if (data.HonorPoints !== undefined) {
-        document.getElementById('honorPoints').innerText = data.HonorPoints;
-      }
-    }
-  }).withFailureHandler(err => {
-    console.error("❌ refreshCoinsAndHonor 失敗：", err.message);
-    showToast("❌ 金幣/榮譽點更新失敗：" + err.message);
-  }).getQuickStatus();
-}
-
-
-
-
-
 
 </script>
 
