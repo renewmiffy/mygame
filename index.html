@@ -387,7 +387,6 @@ body {
     <div class="resources">
       <div>💰 <span id="coins">0</span></div>
       <div>⭐ <span id="honorPoints">0</span></div>
-      <div>AP: <span id="ap">0</span></div>
     </div>
 
    <div class="attributes">
@@ -413,6 +412,9 @@ body {
   </div>
 </div>
 
+    <div class="gear">⚙️</div>
+  </div>
+
 <div id="side-panel">
   <div id="status-box">
     <h4>當前狀態</h4>
@@ -420,17 +422,7 @@ body {
       <!-- 狀態項目由 JS 動態塞 -->
     </div>
   </div>
-
-  <div id="attributes-box">
-    <h4>屬性</h4>
-    <div id="attributes-list">
-      <!-- 屬性項目由 JS 動態塞 -->
-    </div>
-  </div>
 </div>
-
-    <div class="gear">⚙️</div>
-  </div>
 
 <div class="bottom-bar">
 <div class="bottom-item" onclick="openDailyModal()">
@@ -538,15 +530,6 @@ body {
   </div>
 </div>
 
-<!-- ✅ 說明浮窗 -->
-<div id="item-detail-modal" class="adventure-modal hidden">
-  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
-  <div class="adventure-content">
-    <h3 id="item-detail-name">物品名稱</h3>
-    <div id="item-detail-description">說明</div>
-    <div id="item-detail-effects" style="margin-top:10px; font-size:14px;"></div>
-  </div>
-</div>
 <!-- ✅ 販售確認 Modal -->
 <div id="confirm-sell-modal" class="adventure-modal hidden">
   <div class="adventure-content">
@@ -568,20 +551,30 @@ body {
 
 </body>
 <script>
+  // ✅ 新增輔助函式，將後端日誌轉發到瀏覽器 Console
+  function logToConsole(logData) {
+    console.log('[APPS_SCRIPT_LOG]', logData);
+  }
+
   // 頂層開始
 google.script.run
   .withSuccessHandler(function(data) {
     try {
-      console.log('✅ 後端回傳：', data);
+      console.log('✅ getProfileData 回傳：', data);
 
       if (data) {
+        // ✅ 檢查並印出後端傳來的偵錯日誌
+        if (data.debugLog && Array.isArray(data.debugLog)) {
+          console.groupCollapsed("📄 後端狀態評估日誌");
+          data.debugLog.forEach(log => console.log(log));
+          console.groupEnd();
+        }
         document.getElementById('background').src = data.backgroundUrl || '';
         document.getElementById('character').src = data.characterUrl || '';
         document.getElementById('playerName').innerText = data.playerName || '玩家';
         document.getElementById('birthday').innerText = "生日: " + (data.birthday || '未設定');
         document.getElementById('coins').innerText = (data.coins !== undefined) ? data.coins : 0;
         document.getElementById('honorPoints').innerText = (data.honorPoints !== undefined) ? data.honorPoints : 0;
-        document.getElementById('ap').innerText = (!isNaN(data.todayActionPoints)) ? data.todayActionPoints : 0;
 
 const setAttr = (id, value) => {
   const num = parseFloat(value);
@@ -602,7 +595,12 @@ const setAttr = (id, value) => {
         if (!data.surveyFilledToday) {
           openSurveyModal();
         }
-         refreshSidePanel();
+        // ✅ 初始載入時，直接使用 getProfileData 回傳的資料更新側邊欄
+        if (data.StatusList) {
+          updateSidePanel(data);
+        } else {
+          refreshMainGameUI(); // 作為安全備用方案
+        }
       } else {
         showToast("⚠️ 資料為空，請稍後再試");
       }
@@ -995,74 +993,65 @@ function claimDailyTask(missionId) {
 
 
 
-function refreshHeaderBar() {
+function refreshMainGameUI() {
   google.script.run
     .withSuccessHandler(data => {
-      console.log("🔄 refreshHeaderBar:", data);  // ✅ 除錯用
-
-      document.getElementById('ap').innerText = Math.floor(data.TodayActionPoints || 0);
-      document.getElementById('coins').innerText = data.Coins;
-      document.getElementById('honorPoints').innerText = data.HonorPoints;
-
-      // ✅ 對應 QuickStatus 傳回的是 Cleanliness, Mood 等 ➜ 要轉成對應的 ID
-      const fieldToIdMap = {
-        Cleanliness: 'cleanliness',
-        Mood: 'mood',
-        Energy: 'energy',
-        Health: 'health',
-        SelfDiscipline: 'selfDiscipline'
-      };
-
-      Object.entries(fieldToIdMap).forEach(([field, id]) => {
-        const num = Number(data[field]) || 0;
-        const bar = document.getElementById(id);
-        const label = document.getElementById(`${id}-label`);
-        if (bar) bar.style.width = `${num}%`;
-        if (label) {
-          const zh = {
-            cleanliness: "清潔度",
-            mood: "心情",
-            energy: "精力",
-            health: "健康",
-            selfDiscipline: "自律"
-          }[id];
-          label.innerText = `${zh} ${Math.round(num)}/100`;
-        }
-      });
+      console.log("🔄 refreshMainGameUI (getQuickStatus):", data);
+      // ✅ 核心修正：更新角色圖片
+      if (data.characterUrl) {
+        document.getElementById('character').src = data.characterUrl;
+      }
+      // 更新 Header Bar
+      updateHeaderBar(data);
+      // 更新 Side Panel
+      updateSidePanel(data);
     })
     .withFailureHandler(err => {
-      console.error("❌ refreshHeaderBar 失敗：", err.message);
-      showToast("❌ 資料更新失敗：" + err.message);
+      console.error("❌ refreshMainGameUI 失敗：", err.message);
+      showToast("❌ 介面更新失敗：" + err.message);
     })
     .getQuickStatus();
-}
 
-
-function refreshSidePanel() {
-  google.script.run.withSuccessHandler(function(data) {
-    const attrBox = document.getElementById('attributes-list');
-    attrBox.innerHTML = `
-      <div class="attribute-item">📚 智力 Lv.${data.IntelligenceLevel} ➜ ${Math.round(data.Intelligence)}</div>
-      <div class="attribute-item">🏃 體力 Lv.${data.PhysicalLevel} ➜ ${Math.round(data.Physical)}</div>
-      <div class="attribute-item">🎨 創造 Lv.${data.CreativityLevel} ➜ ${Math.round(data.Creativity)}</div>
-      <div class="attribute-item">💖 感受 Lv.${data.SensitivityLevel} ➜ ${Math.round(data.Sensitivity)}</div>
-      <div class="attribute-item">🗣️ 氣質 Lv.${data.GraceLevel} ➜ ${Math.round(data.Grace)}</div>
-    `;
-
-    const statusBox = document.getElementById('status-list');
-    statusBox.innerHTML = (data.StatusList.length > 0)
-      ? data.StatusList.map(s => `<div class="status-item">⚠️ ${s.StatusName}<div class="status-detail">${s.Effect}</div></div>`).join('')
-      : `<div class="status-item">🟢 無異常狀態</div>`;
-  }).getQuickStatus();
-}
-function refreshMainGameUI() {
-  refreshHeaderBar();
-  refreshSidePanel();
+  // 最近紀錄可以獨立刷新
   const content = document.getElementById('recent-log-content');
   if (!content.classList.contains('hidden')) {
     refreshRecentLog();
   }
 }
+
+// ✅ 新函式：只負責渲染 Header Bar，不抓資料
+function updateHeaderBar(data) {
+  document.getElementById('coins').innerText = data.Coins;
+  document.getElementById('honorPoints').innerText = data.HonorPoints;
+
+  const fieldToIdMap = {
+    Cleanliness: 'cleanliness',
+    Mood: 'mood',
+    Energy: 'energy',
+    Health: 'health',
+    SelfDiscipline: 'selfDiscipline'
+  };
+
+  Object.entries(fieldToIdMap).forEach(([field, id]) => {
+    const num = Number(data[field]) || 0;
+    const bar = document.getElementById(id);
+    const label = document.getElementById(`${id}-label`);
+    if (bar) bar.style.width = `${num}%`;
+    if (label) {
+      const zh = { cleanliness: "清潔度", mood: "心情", energy: "精力", health: "健康", selfDiscipline: "自律" }[id];
+      label.innerText = `${zh} ${Math.round(num)}/100`;
+    }
+  });
+}
+
+// ✅ 新函式：只負責渲染 Side Panel，不抓資料
+function updateSidePanel(data) {
+  const statusBox = document.getElementById('status-list');
+  statusBox.innerHTML = (data.StatusList && data.StatusList.length > 0)
+    ? data.StatusList.map(s => `<div class="status-item">⚠️ ${s.StatusName}<div class="status-detail">${s.Effect}</div></div>`).join('')
+    : `<div class="status-item">🟢 無異常狀態</div>`;
+}
+
 function refreshRecentLog() {
   google.script.run
     .withSuccessHandler(renderRecentLog)
@@ -1099,78 +1088,94 @@ function switchBagTab(tab) {
   });
 }
 
-function renderBagItems(items) {
+function renderBagItems(items) { // ✅ 修改為手風琴樣式
   const group = { all: [], item: [], ticket: [] };
 
   items.forEach(i => {
-    const type = (i.ItemType || '').toLowerCase();
-    const icon = getItemIcon(type);
+    const itemType = i.ItemType || 'Consumable';
+    const icon = getItemIcon(itemType);
     const label = `${icon} ${i.ItemName} x${i.Count}`;
-    const showDetail = `showItemDetail(${JSON.stringify(i).replace(/"/g, '&quot;')})`;
 
-    const canSell = i.Count > 1;
+    // --- 產生詳細資訊的 HTML ---
+    const description = i.Description || '無說明';
+    const effectLines = parseEffects(i.Effect);
+    let effectHtml = effectLines.length
+      ? '<ul style="margin:0; padding-left: 20px;">' + effectLines.map(l => `<li>${l}</li>`).join('') + '</ul>'
+      : '無效果';
 
+    let sellPriceHtml = '';
+    if (i.SellPrice > 0) {
+      sellPriceHtml = `<div style="margin-top:10px;color:#8b5e3c;">💰 可販售金幣：${i.SellPrice}</div>`;
+    } else if (i.HonorSellPrice > 0) {
+      sellPriceHtml = `<div style="margin-top:10px;color:#8b5e3c;">⭐ 可販售榮譽點數：${i.HonorSellPrice}</div>`;
+    }
+
+    // --- 產生按鈕 ---
+    const canSell = i.IsSellable === true && (i.SellPrice > 0 || i.HonorSellPrice > 0);
     const sellBtn = canSell
-      ? `<button onclick="showSellModal('${i.ItemID}',
-            decodeURIComponent('${encodeURIComponent(i.ItemName)}'),
-            ${i.Count})">販售</button>`
-      : `<button class="btn-disabled" disabled>無法販售</button>`;
-
+      ? `<button onclick="showSellModal('${i.ItemID}', '${encodeURIComponent(i.ItemName)}', ${i.Count})">販售</button>`
+      : `<button class="btn-disabled" disabled>不可販售</button>`;
     const actionBtn = `<button onclick="useItem('${i.ItemID}')">使用</button>`;
 
+    // --- 組合最終的 HTML ---
     const html = `
-      <div style="border:1px solid #ccc; border-radius:6px; padding:6px; margin:6px 0; background:#fffdf9;">
-        <strong style="cursor:pointer;" onclick="${showDetail}">${label}</strong><br/>
-        ${actionBtn} ${sellBtn}
+      <div class="bag-item-container" style="border:1px solid #ccc; border-radius:6px; padding:8px; margin:8px 0; background:#fffdf9; transition: background-color 0.2s;">
+        <div class="bag-item-header" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleItemDetail(this)">
+            <strong>${label}</strong>
+            <span class="toggle-icon" style="font-size: 1.2em; color: #888; transform: rotate(0deg); transition: transform 0.2s;">▼</span>
+        </div>
+        <div class="bag-item-detail hidden" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; font-size: 14px;">
+            <p style="margin: 0 0 8px 0;">${description}</p>
+            <div><strong>效果:</strong>${effectHtml}</div>
+            ${sellPriceHtml}
+            <div class="item-actions" style="margin-top: 10px; text-align: right;">
+                ${actionBtn} ${sellBtn}
+            </div>
+        </div>
       </div>`;
 
     group.all.push(html);
-    if (type.includes('ticket')) group.ticket.push(html);
-    else group.item.push(html);
+    group[itemType === 'Redeemable' ? 'ticket' : 'item'].push(html);
   });
 
   ['all', 'item', 'ticket'].forEach(t => {
     document.getElementById('bag-list-' + t).innerHTML = group[t].join('') || '<div>目前沒有物品</div>';
   });
-
+}
+function getItemIcon(itemType) {
+  if (itemType === 'Redeemable') return '🎟️';
+  if (itemType === 'Consumable') return '🧃';
+  return '🎒';
 }
 
-
-
-
-function getItemIcon(type) {
-  return { item: '🧃', ticket: '🎟️' }[type] || '🎒';
-}
-
-function showItemDetail(item) {
-  document.getElementById('item-detail-name').innerText = `${item.ItemName}`;
-  document.getElementById('item-detail-description').innerText = item.Description || '無說明';
-
-  const effectLines = parseEffects(item.Effect);
-  let effectHtml = effectLines.length
-    ? '<ul>' + effectLines.map(l => `<li>${l}</li>`).join('') + '</ul>'
-    : '無效果';
-
-  // 加入販售金額顯示
-  if (item.SellPrice > 0) {
-    effectHtml += `<div style="margin-top:10px;color:#8b5e3c;">💰 可販售金幣：${item.SellPrice}</div>`;
-  } else if (item.HonorSellPrice > 0) {
-    effectHtml += `<div style="margin-top:10px;color:#8b5e3c;">⭐ 可販售榮譽點數：${item.HonorSellPrice}</div>`;
-  }
-
-  document.getElementById('item-detail-effects').innerHTML = effectHtml;
-  document.getElementById('item-detail-modal').classList.remove('hidden');
+function toggleItemDetail(headerElement) {
+  const detailElement = headerElement.nextElementSibling;
+  const iconElement = headerElement.querySelector('.toggle-icon');
+  const isHidden = detailElement.classList.toggle('hidden');
+  
+  iconElement.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+  iconElement.innerHTML = isHidden ? '▼' : '▲';
+  headerElement.parentElement.style.backgroundColor = isHidden ? '#fffdf9' : '#f8f2e9';
 }
 
 function parseEffects(effectStr) {
   if (!effectStr) return [];
   try {
-    return effectStr.split(',').map(pair => {
-      const [field, value] = pair.split('+');
-      return `${mapFieldToName(field)} +${value}`;
+    const effects = JSON.parse(effectStr);
+    if (typeof effects !== 'object' || effects === null || Array.isArray(effects)) {
+      return [String(effectStr)];
+    }
+    const lines = Object.entries(effects).map(([field, value]) => {
+      const numValue = Number(value);
+      if (isNaN(numValue)) {
+        return `${mapFieldToName(field)}: ${value}`;
+      }
+      const prefix = numValue >= 0 ? '+' : '';
+      return `${mapFieldToName(field)} ${prefix}${numValue}`;
     });
+    return lines.length > 0 ? lines : ['無特殊效果'];
   } catch (e) {
-    return ['❌ 效果解析錯誤'];
+    return [String(effectStr)];
   }
 }
 
@@ -1197,10 +1202,10 @@ let pendingSellItemID  = null;
 let pendingSellMax     = 1;        // 可賣上限
 
 // ① 打開 modal 時帶入 maxCount
-function showSellModal(itemID, itemName, maxCount) {
+function showSellModal(itemID, encodedItemName, maxCount) {
   pendingSellItemID = itemID;
   pendingSellMax    = maxCount;
-  document.getElementById('confirm-sell-name').innerText = itemName;
+  document.getElementById('confirm-sell-name').innerText = decodeURIComponent(encodedItemName);
   const qtyInput = document.getElementById('confirm-sell-qty');
   qtyInput.max   = maxCount;
   qtyInput.value = 1;
@@ -1215,42 +1220,19 @@ function confirmSell() {
       Math.max(1, parseInt(document.getElementById('confirm-sell-qty').value) || 1)
   );
   const itemID = pendingSellItemID;
-  pendingSellItemID = null;
-
-  closeModal(document.getElementById('confirm-sell-modal'));
 
   google.script.run
     .withSuccessHandler(msg => {
       showToast(msg || "✅ 已販售！");
-      refreshCoinsAndHonor();
+      document.getElementById('confirm-sell-modal').classList.add('hidden'); // 在成功後才關閉
+      pendingSellItemID = null; // 在成功後才重設
+      refreshMainGameUI();
       refreshRecentLog();
       openBag();
     })
     .withFailureHandler(err => showToast(err.message || "❌ 失敗：" + err.message))
     .sellItem(itemID, qty);                 // ← 傳 qty
 }
-
-
-function refreshCoinsAndHonor() {
-  google.script.run.withSuccessHandler(data => {
-    if (data) {
-      if (data.Coins !== undefined) {
-        document.getElementById('coins').innerText = data.Coins;
-      }
-      if (data.HonorPoints !== undefined) {
-        document.getElementById('honorPoints').innerText = data.HonorPoints;
-      }
-    }
-  }).withFailureHandler(err => {
-    console.error("❌ refreshCoinsAndHonor 失敗：", err.message);
-    showToast("❌ 金幣/榮譽點更新失敗：" + err.message);
-  }).getQuickStatus();
-}
-
-
-
-
-
 
 </script>
 
