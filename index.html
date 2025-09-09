@@ -1198,8 +1198,8 @@ function mapFieldToName(field) {
 function useItem(itemID) {
   if (!confirm("確定要使用這個道具嗎？")) return;
   google.script.run
-    .withSuccessHandler(() => {
-      showToast("✅ 使用成功！");
+    .withSuccessHandler((msg) => {
+      showToast(msg || "✅ 操作成功！"); // ✅ 顯示後端回傳的客製化訊息
       refreshMainGameUI();
       openBag(); // 重新刷新背包
     })

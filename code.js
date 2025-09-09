@@ -2,8 +2,16 @@ const SPREADSHEET_ID = '1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs';
 
 // ✅ 日期欄位一定要判斷是否為 Date 並轉為 "yyyy/MM/dd" 格式再進行比較
 // 否則會導致 == 比對失敗、條件永遠不成立 顯示用途也要處理日期格式，避免出現 GMT/UTC 雜訊。
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('index');
+function doGet(e) {
+  // ✅ 新增路由功能，區分遊戲主頁和核銷頁面
+  if (e.parameter.page === 'verify' && e.parameter.token) {
+    const template = HtmlService.createTemplateFromFile('verification');
+    template.token = e.parameter.token; // 將 token 傳給 HTML 樣板
+    return template.evaluate().setTitle('遊戲獎勵核銷').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
+  // 預設回傳遊戲主頁
+  return HtmlService.createHtmlOutputFromFile('index').setTitle('我的遊戲').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 function getProfileData() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -864,18 +872,39 @@ function useItem(itemID) {
   const itemName = itemMaster.ItemName || itemID;
   const itemType = itemMaster.ItemType || 'Consumable';
 
-  const effectJson = itemMaster.Effect || '{}';
-  try {
-    const effects = JSON.parse(effectJson);
-    Object.entries(effects).forEach(([field, value]) => {
-      if (profile.hasOwnProperty(field)) {
-        profile[field] = (parseFloat(profile[field]) || 0) + parseFloat(value);
-      } else {
-        Logger.log(`[useItem] 警告：道具 [${itemName}] 的效果欄位 "${field}" 在 Profile 中不存在。`);
-      }
-    });
-  } catch (e) {
-    throw new Error(`❌ 道具 [${itemName}] 的效果格式錯誤 (非 JSON): ${effectJson}`);
+  // ✅【核心修改】區分兌換券和一般道具
+  if (itemType === 'Redeemable') {
+    // 這是兌換券，觸發核銷流程
+    const token = Utilities.getUuid();
+    const redemptionSheet = ss.getSheetByName('RedemptionLog') || ss.insertSheet('RedemptionLog');
+    if (redemptionSheet.getLastRow() === 0) {
+      redemptionSheet.appendRow(['Token', 'ItemID', 'ItemName', 'Status', 'RequestDate', 'ProcessDate', 'PlayerName']);
+    }
+    redemptionSheet.appendRow([token, itemID, itemName, 'Pending', new Date(), '', profile.PlayerName]);
+
+    const url = ScriptApp.getService().getUrl() + '?page=verify&token=' + token;
+    const subject = `[遊戲獎勵兌換] ${profile.PlayerName} 請求兌換：${itemName}`;
+    const body = `
+      <h3>您好！</h3>
+      <p>玩家 <strong>${profile.PlayerName}</strong> 在遊戲中請求兌換以下實體獎勵：</p>
+      <p style="font-size: 18px; font-weight: bold;">獎勵名稱： ${itemName}</p>
+      <p>請點擊以下連結進入核銷頁面進行處理：</p>
+      <p><a href="${url}" style="font-size: 16px; padding: 10px 15px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">點我前往核銷</a></p>
+      <p>如果無法點擊，請複製以下網址到瀏覽器：<br>${url}</p>
+    `;
+    MailApp.sendEmail({ to: 'renewmiffy@gmail.com', subject: subject, htmlBody: body });
+
+  } else {
+    // 這是一般消耗品，套用效果
+    const effectJson = itemMaster.Effect || '{}';
+    try {
+      const effects = JSON.parse(effectJson);
+      Object.entries(effects).forEach(([field, value]) => {
+        if (profile.hasOwnProperty(field)) {
+          profile[field] = (parseFloat(profile[field]) || 0) + parseFloat(value);
+        }
+      });
+    } catch (e) { /* 忽略錯誤 */ }
   }
 
   if (count - 1 <= 0) {
@@ -885,13 +914,20 @@ function useItem(itemID) {
   }
 
   if (itemType === 'Redeemable') {
+    // ✅【修正】直接寫入單筆日誌，而不是呼叫會清空屬性的 writeProfile({}, ...)
     const logHeaders = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
-    const redemptionLog = { CreatedAt: new Date(), Type: 'redemption', ActionName: `兌換 - ${itemName}`, AffectField: 'ItemID', AffectValue: itemID, Source: '玩家使用兌換券' };
-    const logRowToWrite = logHeaders.map(k => redemptionLog[k] ?? '');
-    logSheet.appendRow(logRowToWrite);
-    writeProfile(profile, `兌換 - ${itemName}`);
+    const logEntry = {
+        CreatedAt: new Date(),
+        Type: 'action',
+        ActionName: `請求兌換 - ${itemName}`,
+        Source: `請求兌換 - ${itemName}`
+    };
+    const logRow = logHeaders.map(header => logEntry[header] || '');
+    logSheet.appendRow(logRow);
+    return "✅ 兌換請求已發送！請等待家長為您核准。";
   } else {
     writeProfile(profile, `使用道具 - ${itemName}`);
+    return `✅ 已使用 ${itemName}！`;
   }
 }
 /**
@@ -1085,6 +1121,64 @@ function buyItem(itemID) {
   writeProfile(profileForWrite, `購買商品 - ${item.ItemName}`);
 
   return `✅ 成功購買 ${item.ItemName}！`;
+}
+
+/**
+ * [核銷頁面用] 根據 token 取得兌換詳情
+ * @param {string} token - 核銷權杖
+ * @returns {object|null} - 兌換紀錄物件
+ */
+function getRedemptionDetails(token) {
+  if (!token) return null;
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('RedemptionLog');
+  if (!sheet) return null;
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const tokenCol = headers.indexOf('Token');
+
+  const row = data.find(r => r[tokenCol] === token);
+  if (!row) return null;
+
+  const details = {};
+  headers.forEach((h, i) => {
+    // 確保日期被正確序列化
+    if ((h === 'RequestDate' || h === 'ProcessDate') && row[i] instanceof Date) {
+      details[h] = row[i].toISOString();
+    } else {
+      details[h] = row[i];
+    }
+  });
+  return details;
+}
+
+/**
+ * [核銷頁面用] 處理核准或拒絕
+ * @param {string} token - 核銷權杖
+ * @param {string} action - 'approved' 或 'rejected'
+ * @returns {string} - 結果訊息
+ */
+function processRedemption(token, action) {
+  if (!token) throw new Error("❌ 無效的 Token。");
+  if (action !== 'approved' && action !== 'rejected') throw new Error("❌ 無效的操作。");
+
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('RedemptionLog');
+  if (!sheet) throw new Error("❌ 找不到 RedemptionLog 工作表。");
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const tokenCol = headers.indexOf('Token');
+  const statusCol = headers.indexOf('Status');
+  const processDateCol = headers.indexOf('ProcessDate');
+
+  const rowIndex = data.findIndex(r => r[tokenCol] === token);
+  if (rowIndex === -1) throw new Error("❌ 找不到此兌換紀錄。");
+  if (data[rowIndex][statusCol] !== 'Pending') throw new Error("⚠️ 此請求已被處理，請勿重複操作。");
+
+  sheet.getRange(rowIndex + 1, statusCol + 1).setValue(action === 'approved' ? 'Approved' : 'Rejected');
+  sheet.getRange(rowIndex + 1, processDateCol + 1).setValue(new Date());
+
+  return `✅ 請求已成功標示為 [${action}]！`;
 }
 
 /**
