@@ -997,7 +997,95 @@ function sellItem(itemID, amount) {
   return `✅ 已販售 ${itemName} x${amount}`;
 }
 
-// --- Daily Automation & Event System ---
+/**
+ * 取得商店中所有可購買的商品列表
+ * @returns {Array<object>} - 商品物件的陣列
+ */
+function getShopItems() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  if (!itemSheet) throw new Error("❌ 找不到 'ItemMaster' 工作表。");
+
+  const data = itemSheet.getDataRange().getValues();
+  const headers = data[0];
+  const rows = data.slice(1);
+
+  const purchasableCol = headers.indexOf("IsPurchasable");
+  if (purchasableCol === -1) {
+    Logger.log("ItemMaster 中沒有 IsPurchasable 欄位，無法提供商品。");
+    return [];
+  }
+
+  return rows
+    .filter(row => row[purchasableCol] === true)
+    .map(row => {
+      const item = {};
+      headers.forEach((h, i) => item[h] = row[i]);
+      return {
+        ItemID: item.ItemID,
+        ItemName: item.ItemName,
+        ItemType: item.ItemType,
+        Description: item.Description,
+        Effect: item.Effect,
+        BuyPrice: parseInt(item.BuyPrice || 0),
+        HonorBuyPrice: parseInt(item.HonorBuyPrice || 0)
+      };
+    });
+}
+
+/**
+ * 處理玩家購買商品的邏輯
+ * @param {string} itemID - 欲購買的商品 ID
+ * @returns {string} - 執行結果訊息
+ */
+function buyItem(itemID) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const profileSheet = ss.getSheetByName("Profile");
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  const inventorySheet = ss.getSheetByName("Inventory");
+
+  if (!profileSheet || !itemSheet || !inventorySheet) throw new Error("❌ 找不到必要的資料表 (Profile/ItemMaster/Inventory)。");
+
+  const itemData = itemSheet.getDataRange().getValues();
+  const itemHeaders = itemData[0];
+  const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
+  if (!itemRow) throw new Error("❌ 找不到此商品。");
+
+  const item = {};
+  itemHeaders.forEach((h, i) => item[h] = itemRow[i]);
+  if (item.IsPurchasable !== true) throw new Error("❌ 此商品不可購買。");
+
+  const price = parseInt(item.BuyPrice || 0);
+  const honorPrice = parseInt(item.HonorBuyPrice || 0);
+
+  const profile = getProfileData(); // 使用現有函式讀取最新資料
+  if (price > 0 && (parseInt(profile.coins) || 0) < price) throw new Error(`⚠️ 金幣不足！需要 ${price}，但你只有 ${parseInt(profile.coins) || 0}。`);
+  if (honorPrice > 0 && (parseInt(profile.honorPoints) || 0) < honorPrice) throw new Error(`⚠️ 榮譽點數不足！需要 ${honorPrice}，但你只有 ${parseInt(profile.honorPoints) || 0}。`);
+
+  if (price > 0) profile.coins = (parseInt(profile.coins) || 0) - price;
+  if (honorPrice > 0) profile.honorPoints = (parseInt(profile.honorPoints) || 0) - honorPrice;
+
+  const invData = inventorySheet.getDataRange().getValues();
+  const invHeaders = invData[0];
+  const invRows = invData.slice(1);
+  const itemIDCol = invHeaders.indexOf("ItemID");
+  const countCol = invHeaders.indexOf("Count");
+  const existingItemIndex = invRows.findIndex(r => r[itemIDCol] === itemID);
+
+  if (existingItemIndex !== -1) {
+    const sheetRowIndex = existingItemIndex + 2;
+    const currentCount = parseInt(invRows[existingItemIndex][countCol]) || 0;
+    inventorySheet.getRange(sheetRowIndex, countCol + 1).setValue(currentCount + 1);
+  } else {
+    const newRow = invHeaders.map(h => (h === "ItemID") ? itemID : (h === "Count" ? 1 : ""));
+    inventorySheet.appendRow(newRow);
+  }
+
+  const profileForWrite = { PlayerName: profile.playerName, birthday: profile.birthday, Coins: profile.coins, HonorPoints: profile.honorPoints, Cleanliness: profile.cleanliness, Mood: profile.mood, Energy: profile.energy, Health: profile.health, SelfDiscipline: profile.selfDiscipline };
+  writeProfile(profileForWrite, `購買商品 - ${item.ItemName}`);
+
+  return `✅ 成功購買 ${item.ItemName}！`;
+}
 
 /**
  * [核心每日自動化函式] 執行每日結算與事件檢查。

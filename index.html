@@ -530,6 +530,17 @@ body {
   </div>
 </div>
 
+<!-- 🛒 商店浮窗 -->
+<div id="shop-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3>🛒 商店</h3>
+    <div id="shop-item-list" style="max-height: 400px; overflow-y: auto; padding-right: 10px;">
+      <!-- 商店物品會由 JS 動態塞入 -->
+    </div>
+  </div>
+</div>
+
 <!-- ✅ 販售確認 Modal -->
 <div id="confirm-sell-modal" class="adventure-modal hidden">
   <div class="adventure-content">
@@ -546,6 +557,7 @@ body {
     <button onclick="confirmSell()">✅ 確定販售</button>
     <button onclick="closeModal(this)">❌ 取消</button>
   </div>
+</div>
 </div>
 
 
@@ -1234,6 +1246,66 @@ function confirmSell() {
     .sellItem(itemID, qty);                 // ← 傳 qty
 }
 
+
+// ✅ 新增：商店相關功能
+function openShop() {
+  document.getElementById('shop-modal').classList.remove('hidden');
+  const list = document.getElementById("shop-item-list");
+  list.innerHTML = '載入商品中...';
+  google.script.run
+    .withSuccessHandler(renderShopItems)
+    .withFailureHandler(err => {
+      list.innerHTML = '無法載入商品：' + err.message;
+    })
+    .getShopItems();
+}
+
+function renderShopItems(items) {
+  const list = document.getElementById("shop-item-list");
+  if (!items || items.length === 0) {
+    list.innerHTML = '<div>商店目前沒有商品。</div>';
+    return;
+  }
+
+  const html = items.map(item => {
+    const icon = getItemIcon(item.ItemType);
+    const price = item.BuyPrice > 0 
+      ? `💰 ${item.BuyPrice}` 
+      : (item.HonorBuyPrice > 0 ? `⭐ ${item.HonorBuyPrice}` : '免費');
+    
+    const description = item.Description || '無說明';
+    const effectLines = parseEffects(item.Effect);
+    let effectHtml = effectLines.length
+      ? '<ul style="margin:0; padding-left: 20px; font-size: 13px;">' + effectLines.map(l => `<li>${l}</li>`).join('') + '</ul>'
+      : '無效果';
+
+    return `
+      <div class="shop-item-container" style="display: flex; align-items: center; border:1px solid #ccc; border-radius:6px; padding:8px; margin:8px 0; background:#fffdf9; gap: 15px;">
+        <div style="font-size: 2em;">${icon}</div>
+        <div style="flex-grow: 1;">
+            <strong style="font-size: 1.1em;">${item.ItemName}</strong>
+            <p style="font-size: 0.9em; color: #666; margin: 4px 0;">${description}</p>
+            <div style="font-size: 0.9em;"><strong>效果:</strong>${effectHtml}</div>
+        </div>
+        <div style="text-align: right;">
+            <button onclick="buyItem('${item.ItemID}')" style="font-size: 1em; padding: 8px 12px;">購買</button>
+            <div style="margin-top: 5px; font-weight: bold;">${price}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  list.innerHTML = html;
+}
+
+function buyItem(itemID) {
+  if (!confirm("確定要購買此商品嗎？")) return;
+  showToast("⏳ 正在處理購買...", 2000);
+  google.script.run
+    .withSuccessHandler(msg => { showToast(msg || "✅ 購買成功！"); refreshMainGameUI(); })
+    .withFailureHandler(err => { showToast("❌ 購買失敗：" + err.message); })
+    .buyItem(itemID);
+}
 </script>
 
 </html>
