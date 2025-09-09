@@ -10,6 +10,12 @@ function doGet(e) {
     return template.evaluate().setTitle('遊戲獎勵核銷').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
+  // ✅ 新增：提供一個頁面來查看所有待核銷的項目
+  if (e.parameter.page === 'admin') {
+    const template = HtmlService.createTemplateFromFile('admin');
+    return template.evaluate().setTitle('管理後台 - 待核銷列表').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
   // 預設回傳遊戲主頁
   return HtmlService.createHtmlOutputFromFile('index').setTitle('我的遊戲').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -882,15 +888,18 @@ function useItem(itemID) {
     }
     redemptionSheet.appendRow([token, itemID, itemName, 'Pending', new Date(), '', profile.PlayerName]);
 
+    const adminUrl = ScriptApp.getService().getUrl() + '?page=admin';
     const url = ScriptApp.getService().getUrl() + '?page=verify&token=' + token;
     const subject = `[遊戲獎勵兌換] ${profile.PlayerName} 請求兌換：${itemName}`;
     const body = `
       <h3>您好！</h3>
       <p>玩家 <strong>${profile.PlayerName}</strong> 在遊戲中請求兌換以下實體獎勵：</p>
       <p style="font-size: 18px; font-weight: bold;">獎勵名稱： ${itemName}</p>
-      <p>請點擊以下連結進入核銷頁面進行處理：</p>
-      <p><a href="${url}" style="font-size: 16px; padding: 10px 15px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">點我前往核銷</a></p>
-      <p>如果無法點擊，請複製以下網址到瀏覽器：<br>${url}</p>
+      <p>請點擊以下連結，單獨處理此項兌換：</p>
+      <p><a href="${url}" style="font-size: 16px; padding: 10px 15px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">處理「${itemName}」</a></p>
+      <hr style="margin: 20px 0;">
+      <p style="font-size: 14px;">或者，您可以點擊下方連結，一次查看所有待處理的項目：</p>
+      <p><a href="${adminUrl}" style="font-size: 16px; padding: 8px 12px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">查看所有待核銷列表</a></p>
     `;
     MailApp.sendEmail({ to: 'renewmiffy@gmail.com', subject: subject, htmlBody: body });
 
@@ -1124,6 +1133,36 @@ function buyItem(itemID) {
 }
 
 /**
+ * [管理頁面用] 取得所有待處理的兌換請求
+ * @returns {Array<object>} - 待處理的兌換紀錄陣列
+ */
+function getPendingRedemptions() {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('RedemptionLog');
+  if (!sheet || sheet.getLastRow() < 2) return [];
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const statusCol = headers.indexOf('Status');
+
+  if (statusCol === -1) return [];
+
+  return data
+    .slice(1)
+    .filter(row => row[statusCol] === 'Pending')
+    .map(row => {
+      const item = {};
+      headers.forEach((h, i) => {
+        if ((h === 'RequestDate') && row[i] instanceof Date) {
+          item[h] = row[i].toISOString();
+        } else {
+          item[h] = row[i];
+        }
+      });
+      return item;
+    });
+}
+
+/**
  * [核銷頁面用] 根據 token 取得兌換詳情
  * @param {string} token - 核銷權杖
  * @returns {object|null} - 兌換紀錄物件
@@ -1162,7 +1201,8 @@ function processRedemption(token, action) {
   if (!token) throw new Error("❌ 無效的 Token。");
   if (action !== 'approved' && action !== 'rejected') throw new Error("❌ 無效的操作。");
 
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('RedemptionLog');
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('RedemptionLog');
   if (!sheet) throw new Error("❌ 找不到 RedemptionLog 工作表。");
 
   const data = sheet.getDataRange().getValues();
@@ -1175,9 +1215,45 @@ function processRedemption(token, action) {
   if (rowIndex === -1) throw new Error("❌ 找不到此兌換紀錄。");
   if (data[rowIndex][statusCol] !== 'Pending') throw new Error("⚠️ 此請求已被處理，請勿重複操作。");
 
+  // ✅ 新增：如果拒絕，則歸還道具
+  if (action === 'rejected') {
+    const itemID = data[rowIndex][headers.indexOf('ItemID')];
+    const itemName = data[rowIndex][headers.indexOf('ItemName')];
+
+    if (itemID) {
+      const inventorySheet = ss.getSheetByName('Inventory');
+      const invData = inventorySheet.getDataRange().getValues();
+      const invHeaders = invData[0];
+      const invRows = invData.slice(1);
+      const itemIDCol = invHeaders.indexOf('ItemID');
+      const countCol = invHeaders.indexOf('Count');
+
+      const existingItemIndex = invRows.findIndex(r => r[itemIDCol] === itemID);
+
+      if (existingItemIndex !== -1) {
+        const sheetRowIndex = existingItemIndex + 2;
+        const currentCount = parseInt(invRows[existingItemIndex][countCol]) || 0;
+        inventorySheet.getRange(sheetRowIndex, countCol + 1).setValue(currentCount + 1);
+      } else {
+        const newRow = invHeaders.map(h => (h === 'ItemID') ? itemID : (h === 'Count' ? 1 : ''));
+        inventorySheet.appendRow(newRow);
+      }
+
+      // 記錄歸還事件
+      const logSheet = ss.getSheetByName('PlayerLog');
+      const logHeaders = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
+      const logEntry = { CreatedAt: new Date(), Type: 'system', ActionName: `兌換被拒絕 - 歸還道具`, Source: `兌換被拒絕 - 歸還 ${itemName} x1` };
+      const logRow = logHeaders.map(header => logEntry[header] || '');
+      logSheet.appendRow(logRow);
+    }
+  }
+
   sheet.getRange(rowIndex + 1, statusCol + 1).setValue(action === 'approved' ? 'Approved' : 'Rejected');
   sheet.getRange(rowIndex + 1, processDateCol + 1).setValue(new Date());
 
+  if (action === 'rejected') {
+    return `✅ 請求已拒絕，道具已歸還至背包。`;
+  }
   return `✅ 請求已成功標示為 [${action}]！`;
 }
 

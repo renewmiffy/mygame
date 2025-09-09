@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px; background-color: #f4f4f9; color: #333; font-size: 20px; }
+      .container { max-width: 700px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+      h1 { color: #4a4a4a; font-size: 1.5em; }
+      #loading, #message { margin-top: 20px; font-weight: bold; padding: 10px; border-radius: 5px; text-align: center; }
+      .item-list { list-style: none; padding: 0; }
+      .item { background: #fff; border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+      .item-details { flex-grow: 1; }
+      .item-details strong { font-size: 1.1em; color: #333; }
+      .item-details span { font-size: 0.9em; color: #666; display: block; margin-top: 4px; }
+      .verify-btn { padding: 12px 18px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; font-weight: bold; background-color: #007bff; color: white; text-decoration: none; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>⏳ 待核銷的兌換請求</h1>
+      <div id="loading">正在載入...</div>
+      <ul id="pending-list" class="item-list"></ul>
+      <div id="message"></div>
+    </div>
+
+    <script>
+      window.onload = function() {
+        google.script.run
+          .withSuccessHandler(renderList)
+          .withFailureHandler(showError)
+          .getPendingRedemptions();
+      };
+
+      function renderList(items) {
+        const loadingDiv = document.getElementById('loading');
+        const listUl = document.getElementById('pending-list');
+        const messageDiv = document.getElementById('message');
+        loadingDiv.style.display = 'none';
+
+        if (!items || items.length === 0) {
+          messageDiv.innerText = "太棒了！目前沒有待核銷的項目。";
+          messageDiv.style.backgroundColor = '#d4edda';
+          messageDiv.style.color = '#155724';
+          return;
+        }
+
+        const baseUrl = "<?= ScriptApp.getService().getUrl() ?>";
+        let html = '';
+        items.forEach(item => {
+          const verifyUrl = `${baseUrl}?page=verify&token=${item.Token}`;
+          html += `
+            <li class="item">
+              <div class="item-details">
+                <strong>${item.ItemName}</strong>
+                <span>玩家: ${item.PlayerName}</span>
+                <span>請求時間: ${new Date(item.RequestDate).toLocaleString()}</span>
+              </div>
+              <a href="${verifyUrl}" target="_blank" class="verify-btn">前往核銷</a>
+            </li>
+          `;
+        });
+        listUl.innerHTML = html;
+      }
+
+      function showError(error) {
+        document.getElementById('loading').style.display = 'none';
+        const msgDiv = document.getElementById('message');
+        msgDiv.innerText = "錯誤：" + error.message;
+        msgDiv.style.backgroundColor = '#f8d7da';
+        msgDiv.style.color = '#721c24';
+      }
+    </script>
+  </body>
+</html>
