@@ -1277,7 +1277,8 @@ function getShopItems() {
         Description: item.Description,
         Effect: item.Effect,
         BuyPrice: parseInt(item.BuyPrice || 0),
-        HonorBuyPrice: parseInt(item.HonorBuyPrice || 0)
+        HonorBuyPrice: parseInt(item.HonorBuyPrice || 0),
+        Rarity: item.Rarity || 0 // ✅ 新增：回傳稀有度供前端排序
       };
     });
 }

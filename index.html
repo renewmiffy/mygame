@@ -536,18 +536,41 @@ body {
 <div id="shop-modal" class="adventure-modal hidden">
   <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
   <div class="adventure-content">
-    <h3>🛒 商店</h3>
-    <!-- ✅ 新增商店分頁標籤 -->
-    <div class="tabs">
-      <button class="tab-button active" onclick="switchShopTab('all')">全部</button>
-      <button class="tab-button" onclick="switchShopTab('chest')">寶箱</button>
-      <button class="tab-button" onclick="switchShopTab('item')">道具</button>
-    </div>
-    <div id="shop-list-container" style="max-height: 400px; overflow-y: auto; padding-right: 10px;">
-      <div id="shop-list-all" class="tab-content"></div>
-      <div id="shop-list-chest" class="tab-content hidden"></div>
-      <div id="shop-list-item" class="tab-content hidden"></div>
-    </div>
+      <h3>🛒 商店</h3>
+      <!-- ✅ 1. 主分頁：貨幣類型 -->
+      <div class="tabs primary-tabs">
+        <button class="tab-button active" onclick="switchPrimaryShopTab('coin')">💰 金幣商店</button>
+        <button class="tab-button" onclick="switchPrimaryShopTab('honor')">⭐ 榮譽商店</button>
+      </div>
+
+      <!-- ✅ 金幣商店內容 -->
+      <div id="shop-coin-content" class="primary-tab-content">
+        <!-- 2. 次分頁：商品類別 -->
+        <div class="tabs secondary-tabs">
+          <button class="tab-button active" onclick="switchSecondaryShopTab('coin', 'all')">全部</button>
+          <button class="tab-button" onclick="switchSecondaryShopTab('coin', 'chest')">寶箱</button>
+          <button class="tab-button" onclick="switchSecondaryShopTab('coin', 'item')">道具</button>
+        </div>
+        <div id="shop-list-container-coin" style="max-height: 350px; overflow-y: auto; padding-right: 10px;">
+          <div id="shop-list-coin-all" class="secondary-tab-content"></div>
+          <div id="shop-list-coin-chest" class="secondary-tab-content hidden"></div>
+          <div id="shop-list-coin-item" class="secondary-tab-content hidden"></div>
+        </div>
+      </div>
+
+      <!-- ✅ 榮譽商店內容 -->
+      <div id="shop-honor-content" class="primary-tab-content hidden">
+        <div class="tabs secondary-tabs">
+          <button class="tab-button active" onclick="switchSecondaryShopTab('honor', 'all')">全部</button>
+          <button class="tab-button" onclick="switchSecondaryShopTab('honor', 'chest')">寶箱</button>
+          <button class="tab-button" onclick="switchSecondaryShopTab('honor', 'item')">道具</button>
+        </div>
+        <div id="shop-list-container-honor" style="max-height: 350px; overflow-y: auto; padding-right: 10px;">
+          <div id="shop-list-honor-all" class="secondary-tab-content"></div>
+          <div id="shop-list-honor-chest" class="secondary-tab-content hidden"></div>
+          <div id="shop-list-honor-item" class="secondary-tab-content hidden"></div>
+        </div>
+      </div>
   </div>
 </div>
 
@@ -1401,12 +1424,13 @@ function confirmSell() {
 // ✅ 新增：商店相關功能
 function openShop() {
   document.getElementById('shop-modal').classList.remove('hidden');
-  // ✅ 預設顯示全部頁籤的載入中
-  document.getElementById("shop-list-all").innerHTML = '載入商品中...';
+  // ✅ 預設顯示金幣商店的載入中
+  document.getElementById("shop-list-coin-all").innerHTML = '載入商品中...';
+  document.getElementById("shop-list-honor-all").innerHTML = '載入商品中...';
   google.script.run
     .withSuccessHandler(renderShopItems)
     .withFailureHandler(err => {
-      document.getElementById("shop-list-all").innerHTML = '無法載入商品：' + err.message;
+      document.getElementById("shop-list-coin-all").innerHTML = '無法載入商品：' + err.message;
     })
     .getShopItems();
 }
@@ -1414,65 +1438,110 @@ function openShop() {
 // ✅ 新增：切換商店分頁
 function switchShopTab(tab) {
   const tabs = ['all', 'chest', 'item'];
-  tabs.forEach(t => {
-    document.getElementById('shop-list-' + t).classList.toggle('hidden', t !== tab);
+  // 這個函式現在被拆分為 switchPrimaryShopTab 和 switchSecondaryShopTab
+}
+
+// ✅ 新增：切換主分頁 (金幣/榮譽)
+function switchPrimaryShopTab(currencyType) {
+  document.getElementById('shop-coin-content').classList.toggle('hidden', currencyType !== 'coin');
+  document.getElementById('shop-honor-content').classList.toggle('hidden', currencyType !== 'honor');
+  document.querySelectorAll('#shop-modal .primary-tabs .tab-button').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.includes(currencyType === 'coin' ? '金幣' : '榮譽'));
   });
-  document.querySelectorAll('#shop-modal .tab-button').forEach((btn, idx) => {
-    btn.classList.toggle('active', tabs[idx] === tab);
+}
+
+// ✅ 新增：切換次分頁 (全部/寶箱/道具)
+function switchSecondaryShopTab(currencyType, category) {
+  const categories = ['all', 'chest', 'item'];
+  categories.forEach(cat => {
+    const el = document.getElementById(`shop-list-${currencyType}-${cat}`);
+    if (el) el.classList.toggle('hidden', cat !== category);
+  });
+  document.querySelectorAll(`#shop-${currencyType}-content .secondary-tabs .tab-button`).forEach((btn, idx) => {
+    btn.classList.toggle('active', categories[idx] === category);
   });
 }
 
 function renderShopItems(items) {
-  const groups = { all: [], chest: [], item: [] };
-
   if (!items || items.length === 0) {
-    document.getElementById('shop-list-all').innerHTML = '<div>商店目前沒有商品。</div>';
+    document.getElementById('shop-list-coin-all').innerHTML = '<div>商店目前沒有商品。</div>';
+    document.getElementById('shop-list-honor-all').innerHTML = '<div>商店目前沒有商品。</div>';
     return;
   }
 
+  // ✅ 排序邏輯 (與背包相同)
+  const typeOrder = { 'TreasureChest': 1, 'FixedBundle': 2, 'CurrencyPouch': 3, 'Consumable': 4, 'Redeemable': 5, 'Unknown': 99 };
+  items.sort((a, b) => {
+    const orderA = typeOrder[a.ItemType] || 90;
+    const orderB = typeOrder[b.ItemType] || 90;
+    if (orderA !== orderB) return orderA - orderB;
+    const rarityA = parseInt(a.Rarity) || 0;
+    const rarityB = parseInt(b.Rarity) || 0;
+    if (rarityA !== rarityB) return rarityB - rarityA;
+    return (a.ItemID || '').localeCompare(b.ItemID || '');
+  });
+
+  // ✅ 將商品按貨幣類型分組
+  const coinItems = items.filter(item => item.BuyPrice > 0);
+  const honorItems = items.filter(item => item.HonorBuyPrice > 0 && item.BuyPrice <= 0);
+
+  // ✅ 渲染函式
+  const renderGroup = (itemList, currencyType) => {
+    const groups = { all: [], chest: [], item: [] };
+    itemList.forEach(item => {
+      const icon = getItemIcon(item.ItemType);
+      const price = currencyType === 'coin' ? `💰 ${item.BuyPrice}` : `⭐ ${item.HonorBuyPrice}`;
+      const description = item.Description || '無說明';
+      const effectLines = parseEffects(item.Effect);
+      let effectHtml = effectLines.length
+        ? '<ul style="margin:0; padding-left: 20px; font-size: 13px;">' + effectLines.map(l => `<li>${l}</li>`).join('') + '</ul>'
+        : '無效果';
+
+      let tenPullButton = '';
+      if (item.ItemType === 'TreasureChest') {
+        const tenPullPrice = currencyType === 'coin' ? `💰 ${item.BuyPrice * 10}` : `⭐ ${item.HonorBuyPrice * 10}`;
+        tenPullButton = `<button onclick="buyTenItems('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button><div style="margin-top: 5px; font-weight: bold;">${tenPullPrice}</div>`;
+      }
+
+      const html = `
+        <div class="shop-item-container ${currencyType === 'honor' ? 'honor-item' : ''}" style="display: flex; align-items: center; border:1px solid #ccc; border-radius:6px; padding:8px; margin:8px 0; gap: 15px;">
+          <div style="font-size: 2em;">${icon}</div>
+          <div style="flex-grow: 1;">
+              <strong style="font-size: 1.1em;">${item.ItemName}</strong>
+              <p style="font-size: 0.9em; color: #666; margin: 4px 0;">${description}</p>
+              <div style="font-size: 0.9em;"><strong>效果:</strong>${effectHtml}</div>
+          </div>
+          <div style="text-align: right;">
+              <div style="display:flex; flex-direction:column; gap: 8px;">
+                <div><button onclick="buyItem('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買1個</button><div style="margin-top: 5px; font-weight: bold;">${price}</div></div>
+                ${tenPullButton ? `<div>${tenPullButton}</div>` : ''}
+              </div>
+          </div>
+        </div>
+      `;
+      groups.all.push(html);
+      if (item.ItemType === 'TreasureChest' || item.ItemType === 'FixedBundle' || item.ItemType === 'CurrencyPouch') {
+        groups.chest.push(html); // 寶箱、禮包、錢包都歸在寶箱類
+      } else {
+        groups.item.push(html);
+      }
+    });
+
+    ['all', 'chest', 'item'].forEach(cat => {
+      document.getElementById(`shop-list-${currencyType}-${cat}`).innerHTML = groups[cat].join('') || '<div style="padding: 20px; text-align: center; color: #888;">此分類沒有商品。</div>';
+    });
+  };
+
+  // ✅ 分別渲染金幣和榮譽商店
+  renderGroup(coinItems, 'coin');
+  renderGroup(honorItems, 'honor');
+
+  // ✅ 修正：舊的 renderShopItems 邏輯，現在已整合到 renderGroup 中
+  /*
   items.forEach(item => {
-    const icon = getItemIcon(item.ItemType);
-    // ✅ 判斷是否為榮譽點數專屬商品
     const isHonorItem = item.HonorBuyPrice > 0 && item.BuyPrice <= 0;
-    const price = isHonorItem ? `⭐ ${item.HonorBuyPrice}` : `💰 ${item.BuyPrice}`;
-
-    const description = item.Description || '無說明';
-    const effectLines = parseEffects(item.Effect);
-    let effectHtml = effectLines.length
-      ? '<ul style="margin:0; padding-left: 20px; font-size: 13px;">' + effectLines.map(l => `<li>${l}</li>`).join('') + '</ul>'
-      : '無效果';
-
-    // ✅ 十連抽按鈕，並套用榮譽點數樣式
-    let tenPullButton = '';
-    if (item.ItemType === 'TreasureChest') {
-      const tenPullPrice = isHonorItem ? `⭐ ${item.HonorBuyPrice * 10}` : `💰 ${item.BuyPrice * 10}`;
-      tenPullButton = `<button onclick="buyTenItems('${item.ItemID}')" class="${isHonorItem ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button><div style="margin-top: 5px; font-weight: bold;">${tenPullPrice}</div>`;
-    }
-
-    const html = `
-      <div class="shop-item-container ${isHonorItem ? 'honor-item' : ''}" style="display: flex; align-items: center; border:1px solid #ccc; border-radius:6px; padding:8px; margin:8px 0; gap: 15px;">
-        <div style="font-size: 2em;">${icon}</div>
-        <div style="flex-grow: 1;">
-            <strong style="font-size: 1.1em;">${item.ItemName}</strong>
-            <p style="font-size: 0.9em; color: #666; margin: 4px 0;">${description}</p>
-            <div style="font-size: 0.9em;"><strong>效果:</strong>${effectHtml}</div>
-        </div>
-        <div style="text-align: right;">
-            <div style="display:flex; flex-direction:column; gap: 8px;">
-              <div><button onclick="buyItem('${item.ItemID}')" class="${isHonorItem ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買1個</button><div style="margin-top: 5px; font-weight: bold;">${price}</div></div>
-              ${tenPullButton ? `<div>${tenPullButton}</div>` : ''}
-            </div>
-        </div>
-      </div>
-    `;
-    groups.all.push(html);
-    if (item.ItemType === 'TreasureChest') groups.chest.push(html);
-    else groups.item.push(html);
-  });
-
-  ['all', 'chest', 'item'].forEach(t => {
-    document.getElementById('shop-list-' + t).innerHTML = groups[t].join('') || '<div style="padding: 20px; text-align: center; color: #888;">此分類沒有商品。</div>';
-  });
+  ...
+  */
 }
 
 function buyItem(itemID) {
