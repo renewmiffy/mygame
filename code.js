@@ -847,6 +847,39 @@ function getFieldMapping() {
   return map;
 }
 function useItem(itemID) {
+  // ✅ 輔助函式：執行單次兩階段抽獎
+  function _performSinglePull(lootTable, allItemData, allItemHeaders) {
+      const totalWeight = lootTable.reduce((sum, item) => sum + (item.Weight || 0), 0);
+      if (totalWeight <= 0) throw new Error(`❌ 寶箱的總權重為 0。`);
+  
+      let random = Math.random() * totalWeight;
+      let wonLoot = null;
+  
+      for (const loot of lootTable) {
+        random -= (loot.Weight || 0);
+        if (random <= 0) {
+          wonLoot = loot;
+          break;
+        }
+      }
+      if (wonLoot === null) wonLoot = lootTable[lootTable.length - 1];
+  
+      const type = wonLoot.Type || "ItemRarity"; // 預設為舊格式
+  
+      if (type === "Currency") {
+        return { type: 'currency', rewardID: wonLoot.RewardID, quantity: wonLoot.Quantity, displayName: wonLoot.DisplayName, rarity: 'currency' };
+      } else { // type === "ItemRarity"
+        const selectedRarity = wonLoot.Rarity;
+        const rarityCol = allItemHeaders.indexOf("Rarity");
+        const potentialItems = allItemData.slice(1).filter(row => String(row[rarityCol]) === String(selectedRarity));
+        if (potentialItems.length === 0) throw new Error(`❌ 在 ItemMaster 中找不到任何 Rarity 為 [${selectedRarity}] 的道具可供抽取。`);
+        const wonItemRow = potentialItems[Math.floor(Math.random() * potentialItems.length)];
+        const wonItemID = wonItemRow[allItemHeaders.indexOf("ItemID")];
+        const wonItemName = wonItemRow[allItemHeaders.indexOf("ItemName")] || wonItemID;
+        return { type: 'item', itemID: wonItemID, itemName: wonItemName, rarity: selectedRarity };
+      }
+  }
+
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const profileSheet = ss.getSheetByName("Profile");
   const inventorySheet = ss.getSheetByName("Inventory");
@@ -876,10 +909,167 @@ function useItem(itemID) {
   const itemMaster = {};
   itemHeaders.forEach((k, i) => itemMaster[k] = itemRow[i]);
   const itemName = itemMaster.ItemName || itemID;
-  const itemType = itemMaster.ItemType || 'Consumable';
+  const itemType = itemMaster.ItemType || 'Consumable'; // 預設為消耗品
 
-  // ✅【核心修改】區分兌換券和一般道具
-  if (itemType === 'Redeemable') {
+  // ----------------------------------------------------------------
+  // 1. 處理寶箱 (TreasureChest)
+  // ----------------------------------------------------------------
+  if (itemType === 'TreasureChest') {
+    const lootTableJson = itemMaster.LootTableJSON || '[]';
+    let lootTable;
+    try {
+      lootTable = JSON.parse(lootTableJson);
+      if (!Array.isArray(lootTable) || lootTable.length === 0) {
+        throw new Error("獎池為空或格式不正確。");
+      }
+    } catch (e) {
+      throw new Error(`❌ 無法解析寶箱 [${itemName}] 的獎池設定 (LootTableJSON): ${e.message}`);
+    }
+
+    // ✅ 使用重構後的輔助函式執行單抽
+    const pullResult = _performSinglePull(lootTable, itemData, itemHeaders);
+
+    // ✅ 修正：將消耗寶箱的邏輯移到最前面，確保一定會執行
+    // 消耗寶箱
+    if (count - 1 <= 0) {
+      inventorySheet.deleteRow(invIndex + 2);
+    } else {
+      inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - 1);
+    }
+
+    // --- 發放獎勵 ---
+    let resultMessage = "";
+    if (pullResult.type === 'currency') {
+      profile[pullResult.rewardID] = (parseFloat(profile[pullResult.rewardID]) || 0) + parseFloat(pullResult.quantity);
+      writeProfile(profile, `開啟寶箱 - ${itemName}`);
+      resultMessage = `恭喜！你從 ${itemName} 中獲得了 ${pullResult.displayName} (+${pullResult.quantity})！`;
+    } else {
+      // 發放道具
+      const invData = inventorySheet.getDataRange().getValues();
+      const invHeaders = invData[0];
+      const invRows = invData.slice(1);
+      const itemIDCol = invHeaders.indexOf("ItemID");
+      const countCol = invHeaders.indexOf("Count");
+      const existingItemIndex = invRows.findIndex(r => r[itemIDCol] === pullResult.itemID);
+
+      if (existingItemIndex !== -1) {
+        const sheetRowIndex = existingItemIndex + 2;
+        const currentCount = parseInt(invRows[existingItemIndex][countCol]) || 0;
+        inventorySheet.getRange(sheetRowIndex, countCol + 1).setValue(currentCount + 1);
+      } else {
+        const newRow = invHeaders.map(h => (h === "ItemID") ? pullResult.itemID : (h === "Count" ? 1 : ""));
+        inventorySheet.appendRow(newRow);
+      }
+      resultMessage = `恭喜！你從 ${itemName} 中獲得了【${pullResult.rarity}★】${pullResult.itemName}！`;
+    }
+
+    // 寫入日誌
+    const logHeaders = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
+    const logEntry = {
+        CreatedAt: new Date(),
+        Type: 'action',
+        ActionName: `開啟寶箱`,
+        Source: resultMessage.replace('恭喜！', '').trim()
+    };
+    const logRow = logHeaders.map(header => logEntry[header] || '');
+    logSheet.appendRow(logRow);
+    return resultMessage;
+  }
+  // ----------------------------------------------------------------
+  // ✅ 新增：處理固定內容禮包 (FixedBundle)
+  // ----------------------------------------------------------------
+  else if (itemType === 'FixedBundle') {
+    const effectJson = itemMaster.Effect || '{}';
+    const itemsGranted = [];
+    const itemsToAdd = {};
+
+    try {
+      const effects = JSON.parse(effectJson);
+      if (effects.Items && Array.isArray(effects.Items)) {
+        effects.Items.forEach(itemToGrant => {
+          if (itemToGrant.ItemID && itemToGrant.Quantity > 0) {
+            itemsToAdd[itemToGrant.ItemID] = (itemsToAdd[itemToGrant.ItemID] || 0) + parseInt(itemToGrant.Quantity);
+          }
+        });
+      } else {
+        throw new Error("Effect JSON 中缺少有效的 'Items' 陣列。");
+      }
+    } catch (e) {
+      throw new Error(`❌ 無法解析禮包 [${itemName}] 的效果設定 (Effect): ${e.message}`);
+    }
+
+    if (Object.keys(itemsToAdd).length === 0) {
+      throw new Error(`❌ 禮包 [${itemName}] 的內容為空。`);
+    }
+
+    // --- 批次發放道具 (此處假設禮包內道具皆可堆疊) ---
+    const invData = inventorySheet.getDataRange().getValues();
+    const invHeaders = invData[0];
+    const invRows = invData.slice(1);
+    const itemIDCol = invHeaders.indexOf("ItemID");
+    const countCol = invHeaders.indexOf("Count");
+
+    const inventoryMap = {};
+    invRows.forEach((row, index) => {
+      inventoryMap[row[itemIDCol]] = { count: parseInt(row[countCol]) || 0, sheetRow: index + 2 };
+    });
+
+    const rowsToAppend = [];
+    Object.entries(itemsToAdd).forEach(([id, qty]) => {
+      if (inventoryMap[id]) {
+        inventorySheet.getRange(inventoryMap[id].sheetRow, countCol + 1).setValue(inventoryMap[id].count + qty);
+      } else {
+        rowsToAppend.push(invHeaders.map(h => (h === "ItemID") ? id : (h === "Count" ? qty : "")));
+      }
+      const grantedItemName = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === id)?.[itemHeaders.indexOf("ItemName")] || id;
+      itemsGranted.push(`${grantedItemName} x${qty}`);
+    });
+
+    if (rowsToAppend.length > 0) {
+      inventorySheet.getRange(inventorySheet.getLastRow() + 1, 1, rowsToAppend.length, invHeaders.length).setValues(rowsToAppend);
+    }
+
+    // 消耗禮包
+    if (count - 1 <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
+    else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - 1); }
+    
+    writeProfile(profile, `開啟禮包 - ${itemName}`);
+    return `✅ 已開啟 ${itemName}！獲得：${itemsGranted.join(', ')}`;
+  }
+  // ----------------------------------------------------------------
+  // ✅ 新增：處理貨幣包 (CurrencyPouch)
+  // ----------------------------------------------------------------
+  else if (itemType === 'CurrencyPouch') {
+    const effectJson = itemMaster.Effect || '{}';
+    let effectApplied = false;
+    const rewardsMessage = [];
+
+    try {
+      const effects = JSON.parse(effectJson);
+      Object.entries(effects).forEach(([field, value]) => {
+        if (profile.hasOwnProperty(field)) {
+          const gain = parseFloat(value);
+          profile[field] = (parseFloat(profile[field]) || 0) + gain;
+          effectApplied = true;
+          rewardsMessage.push(`${field} +${gain}`);
+        }
+      });
+    } catch (e) {
+      throw new Error(`❌ 無法解析貨幣包 [${itemName}] 的效果設定 (Effect): ${e.message}`);
+    }
+
+    if (!effectApplied) { throw new Error(`❌ 貨幣包 [${itemName}] 的效果設定無效。`); }
+
+    if (count - 1 <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
+    else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - 1); }
+    
+    writeProfile(profile, `開啟貨幣包 - ${itemName}`);
+    return `✅ 已開啟 ${itemName}！獲得：${rewardsMessage.join(', ')}`;
+  }
+  // ----------------------------------------------------------------
+  // 2. 處理兌換券 (Redeemable)
+  // ----------------------------------------------------------------
+  else if (itemType === 'Redeemable') {
     // 這是兌換券，觸發核銷流程
     const token = Utilities.getUuid();
     const redemptionSheet = ss.getSheetByName('RedemptionLog') || ss.insertSheet('RedemptionLog');
@@ -903,7 +1093,11 @@ function useItem(itemID) {
     `;
     MailApp.sendEmail({ to: 'renewmiffy@gmail.com', subject: subject, htmlBody: body });
 
-  } else {
+  } 
+  // ----------------------------------------------------------------
+  // 3. 處理一般消耗品 (Consumable)
+  // ----------------------------------------------------------------
+  else {
     // 這是一般消耗品，套用效果
     const effectJson = itemMaster.Effect || '{}';
     try {
@@ -1103,12 +1297,17 @@ function buyItem(itemID) {
   const price = parseInt(item.BuyPrice || 0);
   const honorPrice = parseInt(item.HonorBuyPrice || 0);
 
-  const profile = getProfileData(); // 使用現有函式讀取最新資料
-  if (price > 0 && (parseInt(profile.coins) || 0) < price) throw new Error(`⚠️ 金幣不足！需要 ${price}，但你只有 ${parseInt(profile.coins) || 0}。`);
-  if (honorPrice > 0 && (parseInt(profile.honorPoints) || 0) < honorPrice) throw new Error(`⚠️ 榮譽點數不足！需要 ${honorPrice}，但你只有 ${parseInt(profile.honorPoints) || 0}。`);
+  // ✅ 修正：直接讀取 Profile 工作表，避免使用 getProfileData() 導致鍵值大小寫不符和資料遺失
+  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
+  const profile = {};
+  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
 
-  if (price > 0) profile.coins = (parseInt(profile.coins) || 0) - price;
-  if (honorPrice > 0) profile.honorPoints = (parseInt(profile.honorPoints) || 0) - honorPrice;
+  if (price > 0 && (parseInt(profile.Coins) || 0) < price) throw new Error(`⚠️ 金幣不足！需要 ${price}。`);
+  if (honorPrice > 0 && (parseInt(profile.HonorPoints) || 0) < honorPrice) throw new Error(`⚠️ 榮譽點數不足！需要 ${honorPrice}。`);
+
+  if (price > 0) profile.Coins = (parseInt(profile.Coins) || 0) - price;
+  if (honorPrice > 0) profile.HonorPoints = (parseInt(profile.HonorPoints) || 0) - honorPrice;
 
   const invData = inventorySheet.getDataRange().getValues();
   const invHeaders = invData[0];
@@ -1126,12 +1325,282 @@ function buyItem(itemID) {
     inventorySheet.appendRow(newRow);
   }
 
-  const profileForWrite = { PlayerName: profile.playerName, birthday: profile.birthday, Coins: profile.coins, HonorPoints: profile.honorPoints, Cleanliness: profile.cleanliness, Mood: profile.mood, Energy: profile.energy, Health: profile.health, SelfDiscipline: profile.selfDiscipline };
-  writeProfile(profileForWrite, `購買商品 - ${item.ItemName}`);
+  writeProfile(profile, `購買商品 - ${item.ItemName}`);
 
   return `✅ 成功購買 ${item.ItemName}！`;
 }
 
+/**
+ * 處理玩家購買並開啟十個寶箱的邏輯 (十連抽)
+ * @param {string} itemID - 欲購買的寶箱 ID
+ * @returns {Array<object>} - 包含 10 個獎勵物品的陣列
+ */
+function buyAndOpenTenItems(itemID) {
+  const GUARANTEE_RARITY = 4; // 保底的星級 (4星)
+
+  // ✅ 輔助函式：執行單次兩階段抽獎 (與 useItem 內的版本相同)
+  function _performSinglePull(lootTable, allItemData, allItemHeaders) {
+      const totalWeight = lootTable.reduce((sum, item) => sum + (item.Weight || 0), 0);
+      if (totalWeight <= 0) throw new Error(`❌ 寶箱的總權重為 0。`);
+      let random = Math.random() * totalWeight;
+      let wonLoot = null;
+      for (const loot of lootTable) {
+        random -= (loot.Weight || 0);
+        if (random <= 0) { wonLoot = loot; break; }
+      }
+      if (wonLoot === null) wonLoot = lootTable[lootTable.length - 1];
+      const type = wonLoot.Type || "ItemRarity";
+      if (type === "Currency") {
+        return { type: 'currency', rewardID: wonLoot.RewardID, quantity: wonLoot.Quantity, displayName: wonLoot.DisplayName, rarity: 'currency' };
+      } else {
+        const selectedRarity = wonLoot.Rarity;
+        const rarityCol = allItemHeaders.indexOf("Rarity");
+        const potentialItems = allItemData.slice(1).filter(row => String(row[rarityCol]) === String(selectedRarity));
+        if (potentialItems.length === 0) throw new Error(`❌ 在 ItemMaster 中找不到任何 Rarity 為 [${selectedRarity}] 的道具可供抽取。`);
+        const wonItemRow = potentialItems[Math.floor(Math.random() * potentialItems.length)];
+        return { type: 'item', itemID: wonItemRow[allItemHeaders.indexOf("ItemID")], itemName: wonItemRow[allItemHeaders.indexOf("ItemName")] || wonItemRow[allItemHeaders.indexOf("ItemID")], rarity: selectedRarity };
+      }
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const profileSheet = ss.getSheetByName("Profile");
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  const inventorySheet = ss.getSheetByName("Inventory");
+
+  // --- 1. 讀取資料 & 檢查費用 ---
+  const itemData = itemSheet.getDataRange().getValues();
+  const itemHeaders = itemData[0];
+  const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
+  if (!itemRow) throw new Error("❌ 找不到此商品。");
+
+  const item = {};
+  itemHeaders.forEach((h, i) => item[h] = itemRow[i]);
+  if (item.ItemType !== 'TreasureChest') throw new Error("❌ 此物品不是寶箱，無法十連抽。");
+
+  const price = parseInt(item.BuyPrice || 0) * 10;
+  const honorPrice = parseInt(item.HonorBuyPrice || 0) * 10;
+
+  // ✅ 修正：直接讀取 Profile 工作表，確保鍵的大小寫正確，避免屬性被歸零
+  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
+  const profile = {};
+  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
+
+  if (price > 0 && (parseInt(profile.Coins) || 0) < price) throw new Error(`⚠️ 金幣不足！十連抽需要 ${price}。`);
+  if (honorPrice > 0 && (parseInt(profile.HonorPoints) || 0) < honorPrice) throw new Error(`⚠️ 榮譽點數不足！十連抽需要 ${honorPrice}。`);
+
+  // --- 2. 執行 10 次抽獎 ---
+  const lootTable = JSON.parse(item.LootTableJSON || '[]');
+  const results = [];
+  for (let i = 0; i < 10; i++) {
+    results.push(_performSinglePull(lootTable, itemData, itemHeaders));
+  }
+
+  // --- 3. 檢查並觸發保底機制 ---
+  const hasGuaranteedItem = results.some(r => r.type === 'item' && parseInt(r.rarity) >= GUARANTEE_RARITY);
+  if (!hasGuaranteedItem) {
+    Logger.log(`[十連抽] 未抽中 ${GUARANTEE_RARITY}★ 以上道具，觸發保底機制！`);
+    const guaranteedLootTable = lootTable.filter(l => (l.Type || "ItemRarity") === "ItemRarity" && parseInt(l.Rarity) >= GUARANTEE_RARITY);
+    if (guaranteedLootTable.length > 0) {
+      const guaranteedItem = _performSinglePull(guaranteedLootTable, itemData, itemHeaders);
+      results[9] = guaranteedItem; // 替換最後一個結果
+      Logger.log(`[十連抽] 保底抽中：${guaranteedItem.rarity}★ ${guaranteedItem.itemName}`);
+    }
+  }
+
+  // --- 4. 扣除費用 & 發放獎勵 ---
+  if (price > 0) profile.Coins = (parseInt(profile.Coins) || 0) - price;
+  if (honorPrice > 0) profile.HonorPoints = (parseInt(profile.HonorPoints) || 0) - honorPrice;
+
+  // 處理抽中的貨幣
+  results.forEach(res => {
+    if (res.type === 'currency') {
+      // ✅ 修正：使用從 JSON 讀取的原始 RewardID (e.g., "HonorPoints")
+      profile[res.rewardID] = (parseFloat(profile[res.rewardID]) || 0) + parseFloat(res.quantity);
+    }
+  });
+
+  // 批次發放道具
+  const invData = inventorySheet.getDataRange().getValues();
+  const invHeaders = invData[0];
+  const invRows = invData.slice(1);
+  const itemIDCol = invHeaders.indexOf("ItemID");
+  const countCol = invHeaders.indexOf("Count");
+
+  const inventoryMap = {};
+  invRows.forEach((row, index) => {
+    const currentItemID = row[itemIDCol];
+    if (!inventoryMap[currentItemID]) {
+      inventoryMap[currentItemID] = {
+        count: parseInt(row[countCol]) || 0,
+        sheetRow: index + 2
+      };
+    }
+  });
+
+  const itemsToAdd = {};
+  results.filter(r => r.type === 'item').forEach(res => {
+    itemsToAdd[res.itemID] = (itemsToAdd[res.itemID] || 0) + 1;
+  });
+
+  writeProfile(profile, `十連抽 - ${item.ItemName}`);
+
+  const rowsToAppend = [];
+  Object.entries(itemsToAdd).forEach(([id, qty]) => {
+    if (inventoryMap[id] && item.IsStackable !== false) { // 假設 IsStackable
+      const newCount = inventoryMap[id].count + qty;
+      inventorySheet.getRange(inventoryMap[id].sheetRow, countCol + 1).setValue(newCount);
+    } else {
+      const newRow = invHeaders.map(h => (h === "ItemID") ? id : (h === "Count" ? qty : ""));
+      rowsToAppend.push(newRow);
+    }
+  });
+
+  if (rowsToAppend.length > 0) {
+    inventorySheet.getRange(inventorySheet.getLastRow() + 1, 1, rowsToAppend.length, invHeaders.length).setValues(rowsToAppend);
+  }
+
+  // --- 5. 回傳結果給前端 ---
+  return results.map(r => ({
+    itemName: r.type === 'item' ? r.itemName : r.displayName,
+    rarity: r.rarity,
+    // ✅ 新增回傳資訊
+    type: r.type,
+    rewardID: r.rewardID,
+    quantity: r.quantity
+  }));
+}
+
+/**
+ * 處理玩家從背包使用十個寶箱的邏輯 (十連開)
+ * @param {string} itemID - 欲開啟的寶箱 ID
+ * @returns {Array<object>} - 包含 10 個獎勵物品的陣列
+ */
+function useTenItems(itemID) {
+  const GUARANTEE_RARITY = 4; // 保底的星級 (4星)
+
+  // 輔助函式：執行單次兩階段抽獎
+  function _performSinglePull(lootTable, allItemData, allItemHeaders) {
+      const totalWeight = lootTable.reduce((sum, item) => sum + (item.Weight || 0), 0);
+      if (totalWeight <= 0) throw new Error(`❌ 寶箱的總權重為 0。`);
+      let random = Math.random() * totalWeight;
+      let wonLoot = null;
+      for (const loot of lootTable) {
+        random -= (loot.Weight || 0);
+        if (random <= 0) { wonLoot = loot; break; }
+      }
+      if (wonLoot === null) wonLoot = lootTable[lootTable.length - 1];
+      const type = wonLoot.Type || "ItemRarity";
+      if (type === "Currency") {
+        return { type: 'currency', rewardID: wonLoot.RewardID, quantity: wonLoot.Quantity, displayName: wonLoot.DisplayName, rarity: 'currency' };
+      } else {
+        const selectedRarity = wonLoot.Rarity;
+        const rarityCol = allItemHeaders.indexOf("Rarity");
+        const potentialItems = allItemData.slice(1).filter(row => String(row[rarityCol]) === String(selectedRarity));
+        if (potentialItems.length === 0) throw new Error(`❌ 在 ItemMaster 中找不到任何 Rarity 為 [${selectedRarity}] 的道具可供抽取。`);
+        const wonItemRow = potentialItems[Math.floor(Math.random() * potentialItems.length)];
+        return { type: 'item', itemID: wonItemRow[allItemHeaders.indexOf("ItemID")], itemName: wonItemRow[allItemHeaders.indexOf("ItemName")] || wonItemRow[allItemHeaders.indexOf("ItemID")], rarity: selectedRarity };
+      }
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  const profileSheet = ss.getSheetByName("Profile");
+  const inventorySheet = ss.getSheetByName("Inventory");
+  const logSheet = ss.getSheetByName("PlayerLog");
+
+  // --- 1. 讀取資料 & 檢查背包數量 ---
+  const invData = inventorySheet.getDataRange().getValues();
+  const invHeaders = invData[0];
+  const invRows = invData.slice(1);
+  const itemIDColInv = invHeaders.indexOf("ItemID");
+  const countColInv = invHeaders.indexOf("Count");
+  
+  const invIndex = invRows.findIndex(r => r[itemIDColInv] === itemID);
+  if (invIndex === -1) throw new Error("❌ 背包中找不到此寶箱。");
+  
+  const currentCount = parseInt(invRows[invIndex][countColInv] || 0);
+  if (currentCount < 10) throw new Error(`⚠️ 寶箱數量不足！十連開需要 10 個，但你只有 ${currentCount} 個。`);
+
+  const itemData = itemSheet.getDataRange().getValues();
+  const itemHeaders = itemData[0];
+  const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
+  if (!itemRow) throw new Error("❌ 找不到此商品的主資料。");
+
+  const item = {};
+  itemHeaders.forEach((h, i) => item[h] = itemRow[i]);
+  if (item.ItemType !== 'TreasureChest') throw new Error("❌ 此物品不是寶箱，無法十連開。");
+
+  // --- 2. 執行 10 次抽獎 ---
+  const lootTable = JSON.parse(item.LootTableJSON || '[]');
+  const results = [];
+  for (let i = 0; i < 10; i++) {
+    results.push(_performSinglePull(lootTable, itemData, itemHeaders));
+  }
+
+  // --- 3. 檢查並觸發保底機制 ---
+  const hasGuaranteedItem = results.some(r => r.type === 'item' && parseInt(r.rarity) >= GUARANTEE_RARITY);
+  if (!hasGuaranteedItem) {
+    const guaranteedLootTable = lootTable.filter(l => (l.Type || "ItemRarity") === "ItemRarity" && parseInt(l.Rarity) >= GUARANTEE_RARITY);
+    if (guaranteedLootTable.length > 0) {
+      const guaranteedItem = _performSinglePull(guaranteedLootTable, itemData, itemHeaders);
+      results[9] = guaranteedItem; // 替換最後一個結果
+      Logger.log(`[十連開] 保底抽中：${guaranteedItem.rarity}★ ${guaranteedItem.itemName}`);
+    }
+  }
+
+  // --- 4. 消耗背包中的寶箱 & 發放獎勵 ---
+  const newCount = currentCount - 10;
+  if (newCount <= 0) {
+    inventorySheet.deleteRow(invIndex + 2);
+  } else {
+    inventorySheet.getRange(invIndex + 2, countColInv + 1).setValue(newCount);
+  }
+
+  // ✅ 修正：直接讀取 Profile 工作表，確保鍵的大小寫正確，避免屬性被歸零
+  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
+  const profile = {};
+  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
+
+  results.filter(r => r.type === 'currency').forEach(res => {
+      // ✅ 修正：使用從 JSON 讀取的原始 RewardID (e.g., "HonorPoints")
+      profile[res.rewardID] = (parseFloat(profile[res.rewardID]) || 0) + parseFloat(res.quantity);
+  });
+  writeProfile(profile, `十連開 - ${item.ItemName}`);
+
+  // 批次發放道具 (與 buyAndOpenTenItems 相同)
+  const itemsToAdd = {};
+  results.filter(r => r.type === 'item').forEach(res => { 
+    itemsToAdd[res.itemID] = (itemsToAdd[res.itemID] || 0) + 1; 
+  });
+
+  const inventoryMap = {};
+  const currentInvData = inventorySheet.getDataRange().getValues(); // 重新讀取，因為可能剛刪除過
+  currentInvData.slice(1).forEach((row, index) => {
+    inventoryMap[row[itemIDColInv]] = { count: parseInt(row[countColInv]) || 0, sheetRow: index + 2 };
+  });
+  const rowsToAppend = [];
+  Object.entries(itemsToAdd).forEach(([id, qty]) => {
+    if (inventoryMap[id] && item.IsStackable !== false) {
+      inventorySheet.getRange(inventoryMap[id].sheetRow, countColInv + 1).setValue(inventoryMap[id].count + qty);
+    } else {
+      rowsToAppend.push(invHeaders.map(h => (h === "ItemID") ? id : (h === "Count" ? qty : "")));
+    }
+  });
+  if (rowsToAppend.length > 0) {
+    inventorySheet.getRange(inventorySheet.getLastRow() + 1, 1, rowsToAppend.length, invHeaders.length).setValues(rowsToAppend);
+  }
+
+  // --- 5. 回傳結果給前端 ---
+  return results.map(r => ({
+    itemName: r.type === 'item' ? r.itemName : r.displayName,
+    rarity: r.rarity,
+    type: r.type,
+    rewardID: r.rewardID,
+    quantity: r.quantity
+  }));
+}
 /**
  * [管理頁面用] 取得所有待處理的兌換請求
  * @returns {Array<object>} - 待處理的兌換紀錄陣列
