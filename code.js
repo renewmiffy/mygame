@@ -820,7 +820,8 @@ function getInventory() {
         Effect: ref.Effect || "",
         IsSellable: ref.IsSellable,
         SellPrice: parseInt(ref.SellPrice || 0),
-        HonorSellPrice: parseInt(ref.HonorSellPrice || 0)
+        HonorSellPrice: parseInt(ref.HonorSellPrice || 0),
+        Rarity: ref.Rarity || 0
       });
     } else {
       base.ItemName = id;
@@ -846,7 +847,7 @@ function getFieldMapping() {
 
   return map;
 }
-function useItem(itemID) {
+function useItem(itemID, quantity) {
   // ✅ 輔助函式：執行單次兩階段抽獎
   function _performSinglePull(lootTable, allItemData, allItemHeaders) {
       const totalWeight = lootTable.reduce((sum, item) => sum + (item.Weight || 0), 0);
@@ -897,9 +898,12 @@ function useItem(itemID) {
   const invIndex = invRows.findIndex(row => row[invHeaders.indexOf("ItemID")] === itemID);
   if (invIndex === -1) throw new Error("❌ 背包中找不到此道具");
 
+  quantity = parseInt(quantity) || 1;
+  if (quantity <= 0) throw new Error("⚠️ 使用數量必須大於 0");
+
   const countIdx = invHeaders.indexOf("Count");
   const count = parseInt(invRows[invIndex][countIdx]);
-  if (count <= 0) throw new Error("⚠️ 數量不足");
+  if (count < quantity) throw new Error(`⚠️ 數量不足，需要 ${quantity} 個，但你只有 ${count} 個。`);
 
   const itemData = itemSheet.getDataRange().getValues();
   const itemHeaders = itemData[0];
@@ -910,6 +914,12 @@ function useItem(itemID) {
   itemHeaders.forEach((k, i) => itemMaster[k] = itemRow[i]);
   const itemName = itemMaster.ItemName || itemID;
   const itemType = itemMaster.ItemType || 'Consumable'; // 預設為消耗品
+
+  // 對於一次性使用的道具，強制數量為 1
+  const singleUseTypes = ['TreasureChest', 'Redeemable'];
+  if (singleUseTypes.includes(itemType) && quantity > 1) {
+    quantity = 1; // 強制使用 1 個
+  }
 
   // ----------------------------------------------------------------
   // 1. 處理寶箱 (TreasureChest)
@@ -931,10 +941,10 @@ function useItem(itemID) {
 
     // ✅ 修正：將消耗寶箱的邏輯移到最前面，確保一定會執行
     // 消耗寶箱
-    if (count - 1 <= 0) {
+    if (count - quantity <= 0) {
       inventorySheet.deleteRow(invIndex + 2);
     } else {
-      inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - 1);
+      inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity);
     }
 
     // --- 發放獎勵 ---
@@ -988,7 +998,7 @@ function useItem(itemID) {
       if (effects.Items && Array.isArray(effects.Items)) {
         effects.Items.forEach(itemToGrant => {
           if (itemToGrant.ItemID && itemToGrant.Quantity > 0) {
-            itemsToAdd[itemToGrant.ItemID] = (itemsToAdd[itemToGrant.ItemID] || 0) + parseInt(itemToGrant.Quantity);
+            itemsToAdd[itemToGrant.ItemID] = (itemsToAdd[itemToGrant.ItemID] || 0) + (parseInt(itemToGrant.Quantity) * quantity);
           }
         });
       } else {
@@ -1030,11 +1040,11 @@ function useItem(itemID) {
     }
 
     // 消耗禮包
-    if (count - 1 <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
-    else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - 1); }
+    if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
+    else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
     
     writeProfile(profile, `開啟禮包 - ${itemName}`);
-    return `✅ 已開啟 ${itemName}！獲得：${itemsGranted.join(', ')}`;
+    return `✅ 已開啟 ${itemName} x${quantity}！獲得：${itemsGranted.join(', ')}`;
   }
   // ----------------------------------------------------------------
   // ✅ 新增：處理貨幣包 (CurrencyPouch)
@@ -1048,7 +1058,7 @@ function useItem(itemID) {
       const effects = JSON.parse(effectJson);
       Object.entries(effects).forEach(([field, value]) => {
         if (profile.hasOwnProperty(field)) {
-          const gain = parseFloat(value);
+          const gain = parseFloat(value) * quantity;
           profile[field] = (parseFloat(profile[field]) || 0) + gain;
           effectApplied = true;
           rewardsMessage.push(`${field} +${gain}`);
@@ -1060,11 +1070,11 @@ function useItem(itemID) {
 
     if (!effectApplied) { throw new Error(`❌ 貨幣包 [${itemName}] 的效果設定無效。`); }
 
-    if (count - 1 <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
-    else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - 1); }
+    if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
+    else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
     
     writeProfile(profile, `開啟貨幣包 - ${itemName}`);
-    return `✅ 已開啟 ${itemName}！獲得：${rewardsMessage.join(', ')}`;
+    return `✅ 已開啟 ${itemName} x${quantity}！獲得：${rewardsMessage.join(', ')}`;
   }
   // ----------------------------------------------------------------
   // 2. 處理兌換券 (Redeemable)
@@ -1104,16 +1114,16 @@ function useItem(itemID) {
       const effects = JSON.parse(effectJson);
       Object.entries(effects).forEach(([field, value]) => {
         if (profile.hasOwnProperty(field)) {
-          profile[field] = (parseFloat(profile[field]) || 0) + parseFloat(value);
+          profile[field] = (parseFloat(profile[field]) || 0) + (parseFloat(value) * quantity);
         }
       });
     } catch (e) { /* 忽略錯誤 */ }
   }
 
-  if (count - 1 <= 0) {
+  if (count - quantity <= 0) {
     inventorySheet.deleteRow(invIndex + 2);
   } else {
-    inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - 1);
+    inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity);
   }
 
   if (itemType === 'Redeemable') {
@@ -1130,7 +1140,7 @@ function useItem(itemID) {
     return "✅ 兌換請求已發送！請等待家長為您核准。";
   } else {
     writeProfile(profile, `使用道具 - ${itemName}`);
-    return `✅ 已使用 ${itemName}！`;
+    return `✅ 已使用 ${itemName} x${quantity}！`;
   }
 }
 /**

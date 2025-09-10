@@ -570,6 +570,25 @@ body {
 </div>
 </div>
 
+<!-- ✅ 使用確認 Modal -->
+<div id="confirm-use-modal" class="adventure-modal hidden">
+  <div class="adventure-content">
+  <h3>🎒 確定要使用？</h3>
+  <div id="confirm-use-name" style="margin:8px 0;font-weight:bold;"></div>
+
+  <div style="margin:10px 0;">
+    數量：
+    <input type="number" id="confirm-use-qty" min="1" value="1"
+           style="width:80px; text-align:center;">
+  </div>
+
+  <div style="margin-top:15px;display:flex;justify-content:center;gap:15px;">
+    <button onclick="confirmUse()">✅ 確定使用</button>
+    <button onclick="closeModal(this)">❌ 取消</button>
+  </div>
+</div>
+</div>
+
 <!-- ✅ 十連抽結果 Modal -->
 <div id="ten-pull-results-modal" class="adventure-modal hidden">
   <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
@@ -1133,21 +1152,66 @@ function switchBagTab(tab) {
   });
 }
 
-function renderBagItems(items) { // ✅ 修改為手風琴樣式
+function renderBagItems(items) {
+  // ✅ 新增排序邏輯
+  const typeOrder = {
+    'TreasureChest': 1,
+    'FixedBundle': 2,
+    'CurrencyPouch': 3,
+    'Consumable': 4,
+    'Redeemable': 5,
+    'Unknown': 99
+  };
+
+  items.sort((a, b) => {
+    const orderA = typeOrder[a.ItemType] || 90;
+    const orderB = typeOrder[b.ItemType] || 90;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    const rarityA = parseInt(a.Rarity) || 0;
+    const rarityB = parseInt(b.Rarity) || 0;
+    if (rarityA !== rarityB) {
+      return rarityB - rarityA; // 高星等的排前面
+    }
+    return (a.ItemID || '').localeCompare(b.ItemID || '');
+  });
+
   const group = { all: [], item: [], ticket: [] };
 
   items.forEach(i => {
     const itemType = i.ItemType || 'Consumable';
     const icon = getItemIcon(itemType);
-    const label = `${icon} ${i.ItemName} x${i.Count}`;
 
+    // ✅ 新增：在物品名稱後加上星星
+    let rarityStars = '';
+    const rarityValue = parseInt(i.Rarity);
+    if (rarityValue > 0 && rarityValue <= 5) {
+      rarityStars = ` <span style="color: #DAA520; font-weight: normal;">${'★'.repeat(rarityValue)}</span>`;
+    }
+    const label = `${icon} ${i.ItemName}${rarityStars} x${i.Count}`;
+    
     // --- 產生詳細資訊的 HTML ---
     const description = i.Description || '無說明';
-    const effectLines = parseEffects(i.Effect);
-    let effectHtml = effectLines.length
-      ? '<ul style="margin:0; padding-left: 20px;">' + effectLines.map(l => `<li>${l}</li>`).join('') + '</ul>'
-      : '無效果';
+    let effectHtml;
 
+    // ✅ 新增：產生稀有度說明的 HTML
+    let rarityHtml = '';
+    const rarity = parseInt(i.Rarity);
+    if (rarity > 0 && rarity <= 5) {
+      const stars = '★'.repeat(rarity) + '☆'.repeat(5 - rarity);
+      rarityHtml = `<div style="margin-bottom: 8px; color: #DAA520; font-weight: bold;">稀有度：${stars}</div>`;
+    }
+
+    // ✅ 針對禮包和貨幣包，顯示更友善的效果說明
+    if (itemType === 'FixedBundle' || itemType === 'CurrencyPouch') {
+      effectHtml = '<i style="color:#666;">(請參考物品說明)</i>';
+    } else {
+      const effectLines = parseEffects(i.Effect);
+      effectHtml = effectLines.length
+        ? '<ul style="margin:0; padding-left: 20px;">' + effectLines.map(l => `<li>${l}</li>`).join('') + '</ul>'
+        : '無效果';
+    }
     let sellPriceHtml = '';
     if (i.SellPrice > 0) {
       sellPriceHtml = `<div style="margin-top:10px;color:#8b5e3c;">💰 可販售金幣：${i.SellPrice}</div>`;
@@ -1167,7 +1231,7 @@ function renderBagItems(items) { // ✅ 修改為手風琴樣式
       tenUseBtn = `<button onclick="useTenItems('${i.ItemID}')" style="background-color: #4682B4; color: white;">使用10個</button>`;
     }
 
-    const actionBtn = `<button onclick="useItem('${i.ItemID}')">使用</button>`;
+    const actionBtn = `<button onclick="handleUseItem('${i.ItemID}', '${encodeURIComponent(i.ItemName)}', ${i.Count}, '${i.ItemType}')">使用</button>`;
 
     // --- 組合最終的 HTML ---
     const html = `
@@ -1177,7 +1241,8 @@ function renderBagItems(items) { // ✅ 修改為手風琴樣式
             <span class="toggle-icon" style="font-size: 1.2em; color: #888; transform: rotate(0deg); transition: transform 0.2s;">▼</span>
         </div>
         <div class="bag-item-detail hidden" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; font-size: 14px;">
-            <p style="margin: 0 0 8px 0;">${description}</p>
+            ${rarityHtml}
+            <p style="margin: 0 0 8px 0;">${description}</p>            
             <div><strong>效果:</strong>${effectHtml}</div>
             ${sellPriceHtml}
             <div class="item-actions" style="margin-top: 10px; text-align: right;">
@@ -1235,8 +1300,39 @@ function mapFieldToName(field) {
   return FIELD_MAP?.[field] || field;
 }
 
-function useItem(itemID) {
-  if (!confirm("確定要使用這個道具嗎？")) return;
+let pendingUseItemID = null;
+let pendingUseMax = 1;
+
+function handleUseItem(itemID, encodedItemName, maxCount, itemType) {
+  // 對於這些一次性使用的道具，或數量只有1的，直接使用
+  const singleUseTypes = ['TreasureChest', 'Redeemable'];
+  if (singleUseTypes.includes(itemType) || maxCount === 1) {
+    if (!confirm("確定要使用這個道具嗎？")) return;
+    useItem(itemID, 1); // 直接使用 1 個
+  } else {
+    // 對於其他可堆疊的道具 (如 Consumable)，顯示數量選擇視窗
+    showUseModal(itemID, encodedItemName, maxCount);
+  }
+}
+
+function showUseModal(itemID, encodedItemName, maxCount) {
+  pendingUseItemID = itemID;
+  pendingUseMax = maxCount;
+  document.getElementById('confirm-use-name').innerText = decodeURIComponent(encodedItemName);
+  const qtyInput = document.getElementById('confirm-use-qty');
+  qtyInput.max = maxCount;
+  qtyInput.value = 1;
+  document.getElementById('confirm-use-modal').classList.remove('hidden');
+}
+
+function confirmUse() {
+  if (!pendingUseItemID) return;
+  const qty = Math.min(pendingUseMax, Math.max(1, parseInt(document.getElementById('confirm-use-qty').value) || 1));
+  useItem(pendingUseItemID, qty);
+  closeModal(document.getElementById('confirm-use-modal').querySelector('button')); // 關閉視窗
+}
+
+function useItem(itemID, quantity) {
   google.script.run
     .withSuccessHandler((msg) => {
       showToast(msg || "✅ 操作成功！"); // ✅ 顯示後端回傳的客製化訊息
@@ -1246,7 +1342,7 @@ function useItem(itemID) {
     .withFailureHandler(err => {
       showToast("❌ 錯誤：" + err.message);
     })
-    .useItem(itemID);
+    .useItem(itemID, quantity);
 }
 
 // ✅ 新增：從背包十連開
