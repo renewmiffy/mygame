@@ -41,6 +41,28 @@ body {
   font-weight: bold;
   text-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
 }
+/* ✅ 新增：狀態加成效果顯示區域 */
+.effects-display {
+  display: flex;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: bold;
+  align-items: center;
+}
+.effect-item {
+  background: rgba(34, 139, 34, 0.15); /* 淡綠色背景 */
+  color: #228B22; /* 深綠色文字 */
+  border: 1px solid rgba(34, 139, 34, 0.3);
+  padding: 4px 10px;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  cursor: help;
+}
+.effect-item.coupon {
+  background: rgba(220, 53, 69, 0.1); /* 淡紅色背景 */
+  color: #a42834; /* 深紅色文字 */
+  border: 1px solid rgba(220, 53, 69, 0.2);
+}
 
     .attributes {
       display: flex; gap: 10px; margin-left: 20px;
@@ -389,6 +411,11 @@ body {
       <div>⭐ <span id="honorPoints">0</span></div>
     </div>
 
+    <!-- ✅ 新增：狀態加成顯示區 -->
+    <div id="effects-display" class="effects-display">
+      <!-- JS 會動態填入加成效果 -->
+    </div>
+
    <div class="attributes">
   <div class="attribute">
     <div class="attribute-label" id="cleanliness-label">清潔度</div>
@@ -420,6 +447,12 @@ body {
     <h4>當前狀態</h4>
     <div id="status-list">
       <!-- 狀態項目由 JS 動態塞 -->
+    </div>
+  </div>
+  <div id="buff-box">
+    <h4>增益效果</h4>
+    <div id="buff-list">
+      <!-- Buff 項目由 JS 動態塞 -->
     </div>
   </div>
 </div>
@@ -753,12 +786,18 @@ body {
 </style>
 
 
+
+
+
 </body>
 <script>
   // ✅ 新增輔助函式，將後端日誌轉發到瀏覽器 Console
   function logToConsole(logData) {
     console.log('[APPS_SCRIPT_LOG]', logData);
   }
+
+  // ✅ 新增：全域變數，儲存當前的加成效果
+  let activeEffects = { coinBonus: 0, honorBonus: 0, shopDiscount: 0, nextPurchaseDiscount: 0 };
 
   // 頂層開始
 google.script.run
@@ -804,6 +843,13 @@ const setAttr = (id, value) => {
           updateSidePanel(data);
         } else {
           refreshMainGameUI(); // 作為安全備用方案
+        }
+
+        // ✅ 新增：處理後端傳來的加成效果
+        if (data.effectsSummary) {
+          activeEffects = data.effectsSummary;
+          activeEffects.nextPurchaseDiscount = data.NextPurchaseDiscount || 0;
+          updateEffectsDisplay(activeEffects);
         }
       } else {
         showToast("⚠️ 資料為空，請稍後再試");
@@ -1203,7 +1249,7 @@ function claimDailyTask(missionId) {
 
 
 
-function refreshMainGameUI() {
+function refreshMainGameUI(callback) {
   google.script.run
     .withSuccessHandler(data => {
       console.log("🔄 refreshMainGameUI (getQuickStatus):", data);
@@ -1215,6 +1261,17 @@ function refreshMainGameUI() {
       updateHeaderBar(data);
       // 更新 Side Panel
       updateSidePanel(data);
+      // ✅ 新增：刷新時也更新加成效果
+      if (data.effectsSummary) {
+        activeEffects = data.effectsSummary;
+        activeEffects.nextPurchaseDiscount = data.NextPurchaseDiscount || 0;
+        updateEffectsDisplay(activeEffects);
+      }
+
+      // ✅ 如果有傳入回呼函式，則在所有狀態更新完畢後執行它
+      if (typeof callback === 'function') {
+        callback();
+      }
     })
     .withFailureHandler(err => {
       console.error("❌ refreshMainGameUI 失敗：", err.message);
@@ -1261,6 +1318,29 @@ function updateSidePanel(data) {
     ? data.StatusList.map(s => `<div class="status-item">⚠️ ${s.StatusName}<div class="status-detail">${s.Effect}</div></div>`).join('')
     : `<div class="status-item">🟢 無異常狀態</div>`;
 }
+
+// ✅ 新增：更新頂部狀態加成顯示的函式
+function updateEffectsDisplay(effects) {
+  const display = document.getElementById('effects-display');
+  if (!display) return;
+
+  let html = '';
+  if (effects && effects.coinBonus > 0) {
+    html += `<div class="effect-item" title="所有金幣獲取來源增加 ${effects.coinBonus}%">💰 金幣 +${effects.coinBonus}%</div>`;
+  }
+  if (effects && effects.honorBonus > 0) {
+    html += `<div class="effect-item" title="所有榮譽點數獲取來源增加 ${effects.honorBonus}%">⭐ 榮譽 +${effects.honorBonus}%</div>`;
+  }
+  if (effects && effects.shopDiscount > 0) {
+    html += `<div class="effect-item" title="所有商店的商品享有 ${effects.shopDiscount}% 折扣">🛒 商店 -${effects.shopDiscount}%</div>`;
+  }
+  if (effects && effects.nextPurchaseDiscount > 0) {
+    html += `<div class="effect-item coupon" title="下次購買任何商品享有 ${effects.nextPurchaseDiscount}% 折扣">🏷️ 下次購買 -${effects.nextPurchaseDiscount}%</div>`;
+  }
+
+  display.innerHTML = html;
+}
+
 
 function refreshRecentLog() {
   google.script.run
@@ -1398,7 +1478,14 @@ function renderBagItems(items) {
       </div>`;
 
     group.all.push(html);
-    group[itemType === 'Redeemable' ? 'ticket' : 'item'].push(html);
+
+    // ✅ 修正：將物品正確分類到「道具」或「卷」分頁
+    const ticketTypes = ['Redeemable', 'OneTimeDiscountCoupon', 'BuffItem'];
+    if (ticketTypes.includes(itemType)) {
+      group.ticket.push(html); // 所有「卷」類型的都放到 ticket 分頁
+    } else {
+      group.item.push(html);   // 其他的（如消耗品、寶箱）都放到 item 分頁
+    }
   });
 
   ['all', 'item', 'ticket'].forEach(t => {
@@ -1408,6 +1495,8 @@ function renderBagItems(items) {
 function getItemIcon(itemType) {
   if (itemType === 'Redeemable') return '🎟️';
   if (itemType === 'Consumable') return '🧃';
+  if (itemType === 'OneTimeDiscountCoupon') return '🏷️'; // ✅ 新增折扣券圖示
+  if (itemType === 'BuffItem') return '📜'; // ✅ 新增 Buff 道具圖示
   return '🎒';
 }
 
@@ -1451,7 +1540,7 @@ let pendingUseMax = 1;
 
 function handleUseItem(itemID, encodedItemName, maxCount, itemType) {
   // 對於這些一次性使用的道具，或數量只有1的，直接使用
-  const singleUseTypes = ['TreasureChest', 'Redeemable'];
+  const singleUseTypes = ['TreasureChest', 'Redeemable', 'OneTimeDiscountCoupon'];
   const itemName = decodeURIComponent(encodedItemName);
   if (singleUseTypes.includes(itemType) || maxCount === 1) {
     showConfirmModal(
@@ -1620,19 +1709,55 @@ function renderShopItems(items) {
   // ✅ 渲染函式
   const renderGroup = (itemList, currencyType) => {
     const groups = { all: [], chest: [], item: [] };
+    const priceIcon = currencyType === 'coin' ? '💰' : '⭐';
+
     itemList.forEach(item => {
       const icon = getItemIcon(item.ItemType);
-      const price = currencyType === 'coin' ? `💰 ${item.BuyPrice}` : `⭐ ${item.HonorBuyPrice}`;
       const description = item.Description || '無說明';
       const effectLines = parseEffects(item.Effect);
       let effectHtml = effectLines.length
         ? '<ul style="margin:0; padding-left: 20px; font-size: 13px;">' + effectLines.map(l => `<li>${l}</li>`).join('') + '</ul>'
         : '無效果';
 
+      // --- 價格顯示邏輯 ---
+      let priceHtml;
       let tenPullButton = '';
-      if (item.ItemType === 'TreasureChest') {
-        const tenPullPrice = currencyType === 'coin' ? `💰 ${item.BuyPrice * 10}` : `⭐ ${item.HonorBuyPrice * 10}`;
-        tenPullButton = `<button onclick="buyTenItems('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button><div style="margin-top: 5px; font-weight: bold;">${tenPullPrice}</div>`;
+      const originalPrice = currencyType === 'coin' ? item.BuyPrice : item.HonorBuyPrice;
+      const originalTenPullPrice = originalPrice * 10;
+
+      if (item.IsOnSale) {
+        const salePrice = currencyType === 'coin' ? item.SalePrice : item.HonorSalePrice;
+        priceHtml = `<div style="margin-top: 5px; font-weight: bold; color: #dc3545;">${priceIcon} ${salePrice} <del style="color:#999; margin-left:5px;">${originalPrice}</del></div>`;
+        if (item.ItemType === 'TreasureChest') {
+          const tenPullPriceHtml = `<div style="margin-top: 5px; font-weight: bold; color: #dc3545;">${priceIcon} ${salePrice * 10} <del style="color:#999; margin-left:5px;">${originalTenPullPrice}</del></div>`;
+          tenPullButton = `<div><button onclick="buyTenItems('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button>${tenPullPriceHtml}</div>`;
+        }
+      } else if (activeEffects.nextPurchaseDiscount > 0) {
+        const discountRate = (100 - activeEffects.nextPurchaseDiscount) / 100;
+        const finalPrice = Math.round(originalPrice * discountRate);
+        priceHtml = `<div style="margin-top: 5px; font-weight: bold; color: #dc3545;">${priceIcon} ${finalPrice} <del style="color:#999; margin-left:5px;">${originalPrice}</del></div>`;
+        if (item.ItemType === 'TreasureChest') {
+          const finalTenPullPrice = Math.round(originalTenPullPrice * discountRate);
+          const tenPullPriceHtml = `<div style="margin-top: 5px; font-weight: bold; color: #dc3545;">${priceIcon} ${finalTenPullPrice} <del style="color:#999; margin-left:5px;">${originalTenPullPrice}</del></div>`;
+          tenPullButton = `<div><button onclick="buyTenItems('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button>${tenPullPriceHtml}</div>`;
+        }
+      } else {
+        // 沒有特價，檢查 Buff 折扣
+        const discountRate = (100 - (activeEffects.shopDiscount || 0)) / 100;
+        const finalPrice = Math.round(originalPrice * discountRate);
+
+        if (finalPrice < originalPrice) {
+          priceHtml = `<div style="margin-top: 5px; font-weight: bold; color: #28a745;">${priceIcon} ${finalPrice} <del style="color:#999; margin-left:5px;">${originalPrice}</del></div>`;
+        } else {
+          priceHtml = `<div style="margin-top: 5px; font-weight: bold;">${priceIcon} ${originalPrice}</div>`;
+        }
+        if (item.ItemType === 'TreasureChest') {
+          const finalTenPullPrice = Math.round(originalTenPullPrice * discountRate);
+          const tenPullPriceHtml = (finalTenPullPrice < originalTenPullPrice)
+            ? `<div style="margin-top: 5px; font-weight: bold; color: #28a745;">${priceIcon} ${finalTenPullPrice} <del style="color:#999; margin-left:5px;">${originalTenPullPrice}</del></div>`
+            : `<div style="margin-top: 5px; font-weight: bold;">${priceIcon} ${originalTenPullPrice}</div>`;
+          tenPullButton = `<div><button onclick="buyTenItems('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button>${tenPullPriceHtml}</div>`;
+        }
       }
 
       const html = `
@@ -1645,8 +1770,8 @@ function renderShopItems(items) {
           </div>
           <div style="text-align: right;">
               <div style="display:flex; flex-direction:column; gap: 8px;">
-                <div><button onclick="buyItem('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買1個</button><div style="margin-top: 5px; font-weight: bold;">${price}</div></div>
-                ${tenPullButton ? `<div>${tenPullButton}</div>` : ''}
+                <div><button onclick="buyItem('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買1個</button>${priceHtml}</div>
+                ${tenPullButton}
               </div>
           </div>
         </div>
@@ -1676,6 +1801,19 @@ function renderShopItems(items) {
   */
 }
 
+function refreshShopItems() {
+  // 在商店分頁中顯示載入提示
+  const coinContainer = document.getElementById("shop-list-coin-all");
+  const honorContainer = document.getElementById("shop-list-honor-all");
+  if (coinContainer) coinContainer.innerHTML = '刷新商品中...';
+  if (honorContainer) honorContainer.innerHTML = '刷新商品中...';
+
+  google.script.run
+    .withSuccessHandler(renderShopItems)
+    .withFailureHandler(err => { showToast("❌ 商店刷新失敗: " + err.message); })
+    .getShopItems();
+}
+
 function buyItem(itemID) {
   showConfirmModal(
     `🛒 購買商品`,
@@ -1683,7 +1821,10 @@ function buyItem(itemID) {
     () => {
       showToast("⏳ 正在處理購買...", 2000);
       google.script.run
-        .withSuccessHandler(msg => { showToast(msg || "✅ 購買成功！"); refreshMainGameUI(); })
+        .withSuccessHandler(msg => {
+          showToast(msg || "✅ 購買成功！");
+          refreshMainGameUI(refreshShopItems); // ✅ 先更新主介面，然後在回呼中刷新商店
+        })
         .withFailureHandler(err => { showToast("❌ 購買失敗：" + err.message); })
         .buyItem(itemID);
     }
@@ -1700,7 +1841,9 @@ function buyTenItems(itemID) {
       google.script.run
         .withSuccessHandler(results => {
           showToast("🎉 十連抽完成！");
-          refreshMainGameUI();
+          refreshMainGameUI(() => { // ✅ 使用回呼函式確保順序
+            refreshShopItems();
+          });
           renderTenPullResults(results); // 顯示結果
         })
         .withFailureHandler(err => { showToast("❌ 十連抽失敗：" + err.message); })

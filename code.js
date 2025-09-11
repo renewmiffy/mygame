@@ -75,6 +75,10 @@ function getProfileData() {
     Effect: status.效果說明
   }));
 
+  // ✅ 新增：計算並回傳加成效果總結
+  const effectsSummary = calculateEffectsSummary(activeStatuses);
+  Logger.log(`[getProfileData] 計算出的效果總結: ${JSON.stringify(effectsSummary)}`);
+
   return {
     playerName: profile.PlayerName,
     birthday: birthdayFormatted,
@@ -89,7 +93,9 @@ function getProfileData() {
     characterUrl: "https://renewmiffy.github.io/mygame/img/char/" + finalCharacterFile,
     surveyFilledToday: surveyFilledToday,
     debugLog: activeStatuses.debugLog, // ✅ 將偵錯日誌一起回傳
-    StatusList: statusList // ✅ 新增
+    StatusList: statusList, // ✅ 新增
+    effectsSummary: effectsSummary, // ✅ 新增
+    NextPurchaseDiscount: profile.NextPurchaseDiscount || 0 // ✅ 新增
   };
 }
 function getSurveyQuestions() {
@@ -755,6 +761,10 @@ function getQuickStatus() {
     Effect: status.效果說明
   }));
 
+  // ✅ 新增：計算並回傳加成效果總結
+  const effectsSummary = calculateEffectsSummary(activeStatuses);
+  Logger.log(`[getQuickStatus] 計算出的效果總結: ${JSON.stringify(effectsSummary)}`);
+
   // ✅ 新增：狀態圖片更換邏輯，與 getProfileData() 同步
   const overrideStatus = activeStatuses
     .filter(s => s.CharacterOverrideFile)
@@ -775,7 +785,9 @@ function getQuickStatus() {
     SelfDiscipline: profile.SelfDiscipline || 0,
     StatusList: statusList,
     // ✅ 新增：回傳計算後的角色圖片 URL
-    characterUrl: "https://renewmiffy.github.io/mygame/img/char/" + finalCharacterFile
+    characterUrl: "https://renewmiffy.github.io/mygame/img/char/" + finalCharacterFile,
+    effectsSummary: effectsSummary, // ✅ 新增
+    NextPurchaseDiscount: profile.NextPurchaseDiscount || 0 // ✅ 新增
   };
 }
 function getInventory() {
@@ -1047,6 +1059,29 @@ function useItem(itemID, quantity) {
     return `✅ 已開啟 ${itemName} x${quantity}！獲得：${itemsGranted.join(', ')}`;
   }
   // ----------------------------------------------------------------
+  // ✅ 新增：處理一次性折扣券 (OneTimeDiscountCoupon)
+  // ----------------------------------------------------------------
+  else if (itemType === 'OneTimeDiscountCoupon') {
+    const effectJson = itemMaster.Effect || '{}';
+    let effectInfo;
+    try {
+      effectInfo = JSON.parse(effectJson);
+      if (effectInfo.type !== 'one_time_discount' || !effectInfo.discount_percent) {
+        throw new Error("Effect JSON 格式不符，缺少 type 或 discount_percent。");
+      }
+    } catch (e) {
+      throw new Error(`❌ 無法解析折扣券 [${itemName}] 的效果設定 (Effect): ${e.message}`);
+    }
+
+    profile.NextPurchaseDiscount = parseFloat(effectInfo.discount_percent) || 0;
+
+    if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); }
+    else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
+
+    writeProfile(profile, `使用折扣券 - ${itemName}`);
+    return `✅ 已使用 ${itemName}！下次購買商品時將自動享有折扣。`;
+  }
+  // ----------------------------------------------------------------
   // ✅ 新增：處理貨幣包 (CurrencyPouch)
   // ----------------------------------------------------------------
   else if (itemType === 'CurrencyPouch') {
@@ -1305,20 +1340,48 @@ function buyItem(itemID) {
   itemHeaders.forEach((h, i) => item[h] = itemRow[i]);
   if (item.IsPurchasable !== true) throw new Error("❌ 此商品不可購買。");
 
-  const price = parseInt(item.BuyPrice || 0);
-  const honorPrice = parseInt(item.HonorBuyPrice || 0);
-
-  // ✅ 修正：直接讀取 Profile 工作表，避免使用 getProfileData() 導致鍵值大小寫不符和資料遺失
+  // --- 讀取 Profile ---
   const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
   const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
   const profile = {};
   profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
 
-  if (price > 0 && (parseInt(profile.Coins) || 0) < price) throw new Error(`⚠️ 金幣不足！需要 ${price}。`);
-  if (honorPrice > 0 && (parseInt(profile.HonorPoints) || 0) < honorPrice) throw new Error(`⚠️ 榮譽點數不足！需要 ${honorPrice}。`);
+  // --- 計算最終價格 ---
+  let finalPrice = 0;
+  let finalHonorPrice = 0;
 
-  if (price > 0) profile.Coins = (parseInt(profile.Coins) || 0) - price;
-  if (honorPrice > 0) profile.HonorPoints = (parseInt(profile.HonorPoints) || 0) - honorPrice;
+  const nextPurchaseDiscount = parseFloat(profile.NextPurchaseDiscount) || 0;
+
+  if (item.IsOnSale === true) {
+    // 如果商品正在特價，直接使用特價價格 (此處設計為特價優先，不與 Buff 疊加)
+    finalPrice = parseInt(item.SalePrice || 0);
+    finalHonorPrice = parseInt(item.HonorSalePrice || 0);
+  } else if (nextPurchaseDiscount > 0) {
+    // 如果有一次性折扣券，使用它
+    const discountRate = (100 - nextPurchaseDiscount) / 100;
+    finalPrice = Math.round(parseInt(item.BuyPrice || 0) * discountRate);
+    finalHonorPrice = Math.round(parseInt(item.HonorBuyPrice || 0) * discountRate);
+    profile.NextPurchaseDiscount = 0; // ✅ 使用後立即歸零
+  } else {
+    // 否則，使用原價並套用 Buff 折扣
+    const activeStatuses = evaluateStatusRules(profile);
+    const effectsSummary = calculateEffectsSummary(activeStatuses);
+    const discountRate = (100 - (effectsSummary.shopDiscount || 0)) / 100;
+    finalPrice = Math.round(parseInt(item.BuyPrice || 0) * discountRate);
+    finalHonorPrice = Math.round(parseInt(item.HonorBuyPrice || 0) * discountRate);
+  }
+
+  // --- 檢查餘額 ---
+  if (finalPrice > 0 && (parseInt(profile.Coins) || 0) < finalPrice) {
+    throw new Error(`⚠️ 金幣不足！需要 ${finalPrice}。`);
+  }
+  if (finalHonorPrice > 0 && (parseInt(profile.HonorPoints) || 0) < finalHonorPrice) {
+    throw new Error(`⚠️ 榮譽點數不足！需要 ${finalHonorPrice}。`);
+  }
+
+  // --- 扣錢 ---
+  if (finalPrice > 0) profile.Coins = (parseInt(profile.Coins) || 0) - finalPrice;
+  if (finalHonorPrice > 0) profile.HonorPoints = (parseInt(profile.HonorPoints) || 0) - finalHonorPrice;
 
   const invData = inventorySheet.getDataRange().getValues();
   const invHeaders = invData[0];
@@ -1388,17 +1451,44 @@ function buyAndOpenTenItems(itemID) {
   itemHeaders.forEach((h, i) => item[h] = itemRow[i]);
   if (item.ItemType !== 'TreasureChest') throw new Error("❌ 此物品不是寶箱，無法十連抽。");
 
-  const price = parseInt(item.BuyPrice || 0) * 10;
-  const honorPrice = parseInt(item.HonorBuyPrice || 0) * 10;
-
-  // ✅ 修正：直接讀取 Profile 工作表，確保鍵的大小寫正確，避免屬性被歸零
+  // --- 讀取 Profile ---
   const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
   const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
   const profile = {};
   profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
 
-  if (price > 0 && (parseInt(profile.Coins) || 0) < price) throw new Error(`⚠️ 金幣不足！十連抽需要 ${price}。`);
-  if (honorPrice > 0 && (parseInt(profile.HonorPoints) || 0) < honorPrice) throw new Error(`⚠️ 榮譽點數不足！十連抽需要 ${honorPrice}。`);
+  // --- 計算最終價格 (十倍) ---
+  let finalPrice = 0;
+  let finalHonorPrice = 0;
+
+  const nextPurchaseDiscount = parseFloat(profile.NextPurchaseDiscount) || 0;
+
+  if (item.IsOnSale === true) {
+    // 如果商品正在特價，直接使用特價價格
+    finalPrice = parseInt(item.SalePrice || 0) * 10;
+    finalHonorPrice = parseInt(item.HonorSalePrice || 0) * 10;
+  } else if (nextPurchaseDiscount > 0) {
+    // 如果有一次性折扣券，使用它
+    const discountRate = (100 - nextPurchaseDiscount) / 100;
+    finalPrice = Math.round(parseInt(item.BuyPrice || 0) * 10 * discountRate);
+    finalHonorPrice = Math.round(parseInt(item.HonorBuyPrice || 0) * 10 * discountRate);
+    profile.NextPurchaseDiscount = 0; // ✅ 使用後立即歸零
+  } else {
+    // 否則，使用原價並套用 Buff 折扣
+    const activeStatuses = evaluateStatusRules(profile);
+    const effectsSummary = calculateEffectsSummary(activeStatuses);
+    const discountRate = (100 - (effectsSummary.shopDiscount || 0)) / 100;
+    finalPrice = Math.round(parseInt(item.BuyPrice || 0) * 10 * discountRate);
+    finalHonorPrice = Math.round(parseInt(item.HonorBuyPrice || 0) * 10 * discountRate);
+  }
+
+  // --- 檢查餘額 ---
+  if (finalPrice > 0 && (parseInt(profile.Coins) || 0) < finalPrice) {
+    throw new Error(`⚠️ 金幣不足！十連抽需要 ${finalPrice}。`);
+  }
+  if (finalHonorPrice > 0 && (parseInt(profile.HonorPoints) || 0) < finalHonorPrice) {
+    throw new Error(`⚠️ 榮譽點數不足！十連抽需要 ${finalHonorPrice}。`);
+  }
 
   // --- 2. 執行 10 次抽獎 ---
   const lootTable = JSON.parse(item.LootTableJSON || '[]');
@@ -1420,8 +1510,8 @@ function buyAndOpenTenItems(itemID) {
   }
 
   // --- 4. 扣除費用 & 發放獎勵 ---
-  if (price > 0) profile.Coins = (parseInt(profile.Coins) || 0) - price;
-  if (honorPrice > 0) profile.HonorPoints = (parseInt(profile.HonorPoints) || 0) - honorPrice;
+  if (finalPrice > 0) profile.Coins = (parseInt(profile.Coins) || 0) - finalPrice;
+  if (finalHonorPrice > 0) profile.HonorPoints = (parseInt(profile.HonorPoints) || 0) - finalHonorPrice;
 
   // 處理抽中的貨幣
   results.forEach(res => {
@@ -1960,4 +2050,37 @@ function hasEventBeenTriggeredToday(eventName) {
     }
   }
   return false;
+}
+
+/**
+ * [核心效果計算函式] 根據生效中的狀態，匯總所有加成/折扣效果。
+ * @param {Array<object>} activeStatuses - 從 evaluateStatusRules() 得到的生效狀態陣列。
+ * @returns {object} - 一個包含所有效果總和的物件。
+ *                   例如：{ coinBonus: 15, honorBonus: 0, shopDiscount: 5, globalRewardModifier: 0.8 }
+ */
+function calculateEffectsSummary(activeStatuses) {
+  const summary = {
+    coinBonus: 0,
+    honorBonus: 0,
+    shopDiscount: 0,
+    globalRewardModifier: 1.0,
+  };
+
+  if (!activeStatuses || activeStatuses.length === 0) {
+    return summary;
+  }
+
+  activeStatuses.forEach(status => {
+    // 屬性影響JSON是每日結算用的，這裡不處理。我們處理新欄位。
+    summary.coinBonus += parseFloat(status.CoinBonusPercent) || 0;
+    summary.honorBonus += parseFloat(status.HonorBonusPercent) || 0;
+    summary.shopDiscount += parseFloat(status.ShopDiscountPercent) || 0;
+
+    const modifier = parseFloat(status.GlobalRewardModifier);
+    if (!isNaN(modifier) && modifier > 0) { // 避免乘以0或無效值
+      summary.globalRewardModifier *= modifier;
+    }
+  });
+
+  return summary;
 }
