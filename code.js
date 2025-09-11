@@ -464,13 +464,10 @@ function claimDailyTask(missionId) {
 
   try {
     const rewardObj = JSON.parse(rewardJson);
-    for (const [field, value] of Object.entries(rewardObj)) {
-      if (!profile.hasOwnProperty(field)) {
-        throw new Error(`⚠️ Profile 表未定義欄位：${field}`);
-      }
-      profile[field] = (parseFloat(profile[field]) || 0) + parseFloat(value);
-      rewardText += `+${value} ${field} `;
-    }
+    // ✅ 使用新的獎勵處理函式
+    const { message } = applyRewards(profile, rewardObj, `任務 - ${getMissionField(mission, "任務名稱")}`);
+    rewardText = message;
+
   } catch (e) {
     throw new Error("❌ 無法解析任務獎勵：" + e.message);
   }
@@ -522,16 +519,11 @@ function doDailyTask(taskId) {
   const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
   const profile = {};
   profileHeaders.forEach((key, i) => profile[key] = profileRow[i]);
-
+ 
   const effects = JSON.parse(getTaskField("Effects"));
-  Object.entries(effects).forEach(([field, value]) => {
-    const current = parseFloat(profile[field] || 0);
-    profile[field] = current + parseFloat(value);
-  });
-
-  // ✅ 新增具體任務名稱記錄
   const taskName = getTaskField("任務名稱") || "未知任務";
-  writeProfile(profile, "日常任務 - " + taskName);
+  // ✅ 修正：使用統一的獎勵處理函式，以套用加成/折扣
+  applyRewards(profile, effects, "日常任務 - " + taskName);
 
   const today = new Date();
   const taskRowIndex = taskIndex + 2;
@@ -736,7 +728,12 @@ function evaluateStatusRules(profile) {
         屬性影響JSON: rule["屬性影響JSON"],
         效果說明: rule["效果說明"],
         Priority: rule["Priority"], // ✅ 新增
-        CharacterOverrideFile: rule["CharacterOverrideFile"] // ✅ 新增
+        CharacterOverrideFile: rule["CharacterOverrideFile"], // ✅ 新增
+        // ✅ 修正：讀取所有獎勵加成相關欄位
+        CoinBonusPercent: rule["CoinBonusPercent"],
+        HonorBonusPercent: rule["HonorBonusPercent"],
+        ShopDiscountPercent: rule["ShopDiscountPercent"],
+        GlobalRewardModifier: rule["GlobalRewardModifier"]
       });
     } else {
       debugLog.push(`  - ↳ ❌ 結果：未觸發。`);
@@ -969,9 +966,10 @@ function useItem(itemID, quantity) {
     // --- 發放獎勵 ---
     let resultMessage = "";
     if (pullResult.type === 'currency') {
-      profile[pullResult.rewardID] = (parseFloat(profile[pullResult.rewardID]) || 0) + parseFloat(pullResult.quantity);
-      writeProfile(profile, `開啟寶箱 - ${itemName}`);
-      resultMessage = `恭喜！你從 ${itemName} 中獲得了 ${pullResult.displayName} (+${pullResult.quantity})！`;
+      // ✅ 使用新的獎勵處理函式
+      const rewardsToApply = { [pullResult.rewardID]: pullResult.quantity };
+      const { finalRewards } = applyRewards(profile, rewardsToApply, `開啟寶箱 - ${itemName}`);
+      resultMessage = `恭喜！你從 ${itemName} 中獲得了 ${pullResult.displayName} (+${finalRewards[pullResult.rewardID]})！`;
     } else {
       // 發放道具
       const invData = inventorySheet.getDataRange().getValues();
@@ -1002,7 +1000,14 @@ function useItem(itemID, quantity) {
     };
     const logRow = logHeaders.map(header => logEntry[header] || '');
     logSheet.appendRow(logRow);
-    return resultMessage;
+    // ✅ 修正：回傳結構化資料，與十連抽一致，方便前端統一處理動畫後的結果顯示
+    return [{
+      itemName: pullResult.type === 'item' ? pullResult.itemName : pullResult.displayName,
+      rarity: pullResult.rarity,
+      type: pullResult.type,
+      rewardID: pullResult.rewardID,
+      quantity: pullResult.quantity
+    }];
   }
   // ----------------------------------------------------------------
   // ✅ 新增：處理固定內容禮包 (FixedBundle)
@@ -1063,7 +1068,11 @@ function useItem(itemID, quantity) {
     else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
     
     writeProfile(profile, `開啟禮包 - ${itemName}`);
-    return `✅ 已開啟 ${itemName} x${quantity}！獲得：${itemsGranted.join(', ')}`;
+    // ✅ 修正：回傳結構化資料
+    return {
+      message: `✅ 已開啟 ${itemName} x${quantity}！獲得：${itemsGranted.join(', ')}`,
+      profileData: getQuickStatus() // 順便回傳最新狀態
+    };
   }
   // ----------------------------------------------------------------
   // ✅ 新增：處理時效性 Buff 道具 (BuffItem)
@@ -1096,7 +1105,11 @@ function useItem(itemID, quantity) {
     if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); }
     else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
 
-    return `✅ 已使用 ${itemName}！效果將持續 ${buffInfo.duration_hours} 小時。`;
+    // ✅ 修正：回傳結構化資料
+    return {
+      message: `✅ 已使用 ${itemName}！效果將持續 ${buffInfo.duration_hours} 小時。`,
+      profileData: getQuickStatus()
+    };
   }
   // ----------------------------------------------------------------
   // ✅ 新增：處理貨幣包 (CurrencyPouch)
@@ -1109,12 +1122,11 @@ function useItem(itemID, quantity) {
     try {
       const effects = JSON.parse(effectJson);
       Object.entries(effects).forEach(([field, value]) => {
-        if (profile.hasOwnProperty(field)) {
-          const gain = parseFloat(value) * quantity;
-          profile[field] = (parseFloat(profile[field]) || 0) + gain;
-          effectApplied = true;
-          rewardsMessage.push(`${field} +${gain}`);
-        }
+        const rewardsToApply = { [field]: parseFloat(value) * quantity };
+        // ✅ 使用新的獎勵處理函式
+        const { finalRewards, message } = applyRewards(profile, rewardsToApply, `開啟貨幣包 - ${itemName}`);
+        effectApplied = true;
+        rewardsMessage.push(message);
       });
     } catch (e) {
       throw new Error(`❌ 無法解析貨幣包 [${itemName}] 的效果設定 (Effect): ${e.message}`);
@@ -1125,8 +1137,11 @@ function useItem(itemID, quantity) {
     if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
     else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
     
-    writeProfile(profile, `開啟貨幣包 - ${itemName}`);
-    return `✅ 已開啟 ${itemName} x${quantity}！獲得：${rewardsMessage.join(', ')}`;
+    // ✅ 修正：回傳結構化資料
+    return {
+      message: `✅ 已開啟 ${itemName} x${quantity}！獲得：${rewardsMessage.join(', ')}`,
+      profileData: getQuickStatus()
+    };
   }
   // ----------------------------------------------------------------
   // 2. 處理兌換券 (Redeemable)
@@ -1165,7 +1180,17 @@ function useItem(itemID, quantity) {
     try {
       const effects = JSON.parse(effectJson);
       Object.entries(effects).forEach(([field, value]) => {
-        if (profile.hasOwnProperty(field)) {
+        // ✅ 新增：處理 "All" 這個特殊關鍵字
+        if (field === 'All') {
+          const attributesToBoost = ['Cleanliness', 'Mood', 'Energy', 'Health', 'SelfDiscipline'];
+          const boostValue = parseFloat(value) * quantity;
+          attributesToBoost.forEach(attr => {
+            if (profile.hasOwnProperty(attr)) {
+              profile[attr] = (parseFloat(profile[attr]) || 0) + boostValue;
+            }
+          });
+        } else if (profile.hasOwnProperty(field)) {
+          // 原本的邏輯：處理單一屬性
           profile[field] = (parseFloat(profile[field]) || 0) + (parseFloat(value) * quantity);
         }
       });
@@ -1189,10 +1214,18 @@ function useItem(itemID, quantity) {
     };
     const logRow = logHeaders.map(header => logEntry[header] || '');
     logSheet.appendRow(logRow);
-    return "✅ 兌換請求已發送！請等待家長為您核准。";
+    // ✅ 修正：回傳結構化資料
+    return {
+      message: "✅ 兌換請求已發送！請等待家長為您核准。",
+      profileData: getQuickStatus()
+    };
   } else {
     writeProfile(profile, `使用道具 - ${itemName}`);
-    return `✅ 已使用 ${itemName} x${quantity}！`;
+    // ✅ 修正：回傳結構化資料
+    return {
+      message: `✅ 已使用 ${itemName} x${quantity}！`,
+      profileData: getQuickStatus()
+    };
   }
 }
 /**
@@ -1500,12 +1533,11 @@ function buyAndOpenTenItems(itemID) {
   if (honorPrice > 0) profile.HonorPoints = (parseInt(profile.HonorPoints) || 0) - finalHonorPrice;
 
   // 處理抽中的貨幣
-  results.forEach(res => {
-    if (res.type === 'currency') {
-      // ✅ 修正：使用從 JSON 讀取的原始 RewardID (e.g., "HonorPoints")
-      profile[res.rewardID] = (parseFloat(profile[res.rewardID]) || 0) + parseFloat(res.quantity);
-    }
+  const currencyRewards = {};
+  results.filter(r => r.type === 'currency').forEach(res => {
+    currencyRewards[res.rewardID] = (currencyRewards[res.rewardID] || 0) + parseFloat(res.quantity);
   });
+  applyRewards(profile, currencyRewards, `十連抽 - ${item.ItemName}`);
 
   // 批次發放道具
   const invData = inventorySheet.getDataRange().getValues();
@@ -1529,8 +1561,6 @@ function buyAndOpenTenItems(itemID) {
   results.filter(r => r.type === 'item').forEach(res => {
     itemsToAdd[res.itemID] = (itemsToAdd[res.itemID] || 0) + 1;
   });
-
-  writeProfile(profile, `十連抽 - ${item.ItemName}`);
 
   const rowsToAppend = [];
   Object.entries(itemsToAdd).forEach(([id, qty]) => {
@@ -1650,11 +1680,12 @@ function useTenItems(itemID) {
   const profile = {};
   profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
 
+  const currencyRewards = {};
   results.filter(r => r.type === 'currency').forEach(res => {
-      // ✅ 修正：使用從 JSON 讀取的原始 RewardID (e.g., "HonorPoints")
-      profile[res.rewardID] = (parseFloat(profile[res.rewardID]) || 0) + parseFloat(res.quantity);
+    currencyRewards[res.rewardID] = (currencyRewards[res.rewardID] || 0) + parseFloat(res.quantity);
   });
-  writeProfile(profile, `十連開 - ${item.ItemName}`);
+  // ✅ 使用新的獎勵處理函式
+  applyRewards(profile, currencyRewards, `十連開 - ${item.ItemName}`);
 
   // 批次發放道具 (與 buyAndOpenTenItems 相同)
   const itemsToAdd = {};
@@ -2036,6 +2067,73 @@ function hasEventBeenTriggeredToday(eventName) {
     }
   }
   return false;
+}
+
+/**
+ * [輔助函式] 根據欄位對照表，將英文欄位名轉為中文。
+ * @param {string} field - 英文欄位名。
+ * @param {object} fieldMap - 從 getFieldMapping() 取得的對照表。
+ * @returns {string} - 中文名稱或原始英文名稱。
+ */
+function mapFieldToName(field, fieldMap) {
+  return fieldMap[field] || field;
+}
+
+let cachedFieldMap = null; // ✅ 新增：快取欄位對照表，避免重複讀取
+function getCachedFieldMap() {
+  if (!cachedFieldMap) cachedFieldMap = getFieldMapping();
+  return cachedFieldMap;
+}
+
+/**
+ * [核心獎勵處理函式] 根據玩家狀態，計算並套用最終獎勵。
+ * @param {object} profile - 玩家的 profile 物件 (會被直接修改)。
+ * @param {object} rewards - 原始獎勵物件，例如 { "Coins": 100, "Health": 5 }。
+ * @param {string} source - 獎勵來源的文字描述，用於日誌記錄。
+ * @returns {{finalRewards: object, message: string}} - 包含最終獎勵值和描述訊息的物件。
+ */
+function applyRewards(profile, rewards, source) {
+  const activeStatuses = evaluateStatusRules(profile);
+  const effectsSummary = calculateEffectsSummary(activeStatuses);
+
+  const finalRewards = {};
+  const messageParts = [];
+  const fieldMap = getCachedFieldMap(); // ✅ 取得欄位對照表
+
+  Object.entries(rewards).forEach(([field, value]) => {
+    let finalValue = parseFloat(value) || 0;
+
+    // 只對非道具的獎勵套用加成
+    if (profile.hasOwnProperty(field)) {
+      // 1. 套用全域修正 (例如 "髒兮兮" 懲罰)
+      finalValue *= effectsSummary.globalRewardModifier;
+
+      // 2. 套用特定類型的百分比加成
+      if (field === 'Coins') {
+        finalValue *= (1 + (effectsSummary.coinBonus / 100));
+      } else if (field === 'HonorPoints') {
+        finalValue *= (1 + (effectsSummary.honorBonus / 100));
+      }
+
+      // 四捨五入到整數
+      finalValue = Math.round(finalValue);
+
+      // 更新 profile
+      profile[field] = (parseFloat(profile[field]) || 0) + finalValue;
+      finalRewards[field] = finalValue;
+      messageParts.push(`${mapFieldToName(field, fieldMap) || field} +${finalValue}`); // ✅ 修正呼叫方式
+    }
+  });
+
+  // 使用 writeProfile 統一寫入，它會自動處理日誌
+  if (Object.keys(finalRewards).length > 0) {
+    writeProfile(profile, source);
+  }
+
+  return {
+    finalRewards: finalRewards,
+    message: messageParts.join(', ')
+  };
 }
 
 /**

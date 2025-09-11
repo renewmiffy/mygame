@@ -785,6 +785,78 @@ body {
 }
 </style>
 
+<!-- ✅ 新增：數值變動動畫樣式 -->
+<style>
+.value-change-animation {
+  position: absolute;
+  font-size: 1.3em;
+  font-weight: bold;
+  opacity: 1;
+  animation: float-up-and-fade 2s ease-out forwards;
+  pointer-events: none; /* 避免干擾點擊 */
+  z-index: 1001;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+@keyframes float-up-and-fade {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50px);
+  }
+}
+
+.highlight-change {
+  animation: highlight-bg 0.8s ease-out;
+}
+@keyframes highlight-bg {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(255, 215, 0, 0.4); border-radius: 4px; }
+}
+</style>
+
+<!-- ✅ 開寶箱動畫 Modal -->
+<div id="chest-opening-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 1000;">
+  <img id="chest-animation-img" src="https://renewmiffy.github.io/mygame/img/icons/treasure.jpg" style="height: 250px; width: auto; border-radius: 20px; box-shadow: 0 0 30px #ffd700;">
+  <div id="chest-opening-text" style="margin-top: 20px; color: white; font-size: 1.8em; font-weight: bold; text-shadow: 2px 2px 4px #000;">正在開啟...</div>
+</div>
+
+<style>
+/* ✅ 修正：只有在 modal 被啟用時才套用 flex 佈局 */
+#chest-opening-modal:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+/* 寶箱晃動動畫 */
+#chest-animation-img.shake {
+  animation: shake 0.8s cubic-bezier(.36,.07,.19,.97) both;
+  transform: translate3d(0, 0, 0);
+}
+
+@keyframes shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+
+/* ✅ 新增：寶箱發光/脈動動畫 */
+#chest-animation-img.pulsing {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 30px #ffd700; }
+  50% { box-shadow: 0 0 50px #fff, 0 0 60px #ffd700; }
+  100% { box-shadow: 0 0 30px #ffd700; }
+}
+</style>
+
 
 
 
@@ -798,6 +870,9 @@ body {
 
   // ✅ 新增：全域變數，儲存當前的加成效果
   let activeEffects = { coinBonus: 0, honorBonus: 0, shopDiscount: 0, nextPurchaseDiscount: 0 };
+  
+  // ✅ 新增：全域變數，儲存當前顯示的數值，用於動畫比較
+  let currentDisplayValues = {};
 
   // 頂層開始
 google.script.run
@@ -816,10 +891,21 @@ google.script.run
         document.getElementById('character').src = data.characterUrl || '';
         document.getElementById('playerName').innerText = data.playerName || '玩家';
         document.getElementById('birthday').innerText = "生日: " + (data.birthday || '未設定');
-        document.getElementById('coins').innerText = (data.coins !== undefined) ? data.coins : 0;
-        document.getElementById('honorPoints').innerText = (data.honorPoints !== undefined) ? data.honorPoints : 0;
+        
+        // ✅ 初始載入時，直接設定數值並儲存
+        currentDisplayValues = {
+            Coins: data.coins,
+            HonorPoints: data.honorPoints,
+            Cleanliness: data.cleanliness,
+            Mood: data.mood,
+            Energy: data.energy,
+            Health: data.health,
+            SelfDiscipline: data.selfDiscipline
+        };
+        document.getElementById('coins').innerText = formatAttr(data.coins);
+        document.getElementById('honorPoints').innerText = formatAttr(data.honorPoints);
 
-const setAttr = (id, value) => {
+        const setAttr = (id, value) => {
   const num = parseFloat(value);
   document.getElementById(id).style.width = (!isNaN(num) ? num : 0) + "%";
   document.getElementById(`${id}-label`).innerText = `${getAttrLabel(id)} ${formatAttr(num)}/100`;
@@ -1288,26 +1374,61 @@ function refreshMainGameUI(callback) {
 
 // ✅ 新函式：只負責渲染 Header Bar，不抓資料
 function updateHeaderBar(data) {
-  document.getElementById('coins').innerText = data.Coins;
-  document.getElementById('honorPoints').innerText = data.HonorPoints;
+  // --- 更新並播放金幣動畫 ---
+  const coinEl = document.getElementById('coins');
+  const coinContainer = coinEl.parentElement;
+  const coinVal = parseFloat(data.Coins) || 0;
+  const oldCoinVal = parseFloat(currentDisplayValues.Coins) || 0;
+  const coinDiff = Math.round(coinVal - oldCoinVal);
+  if (coinDiff !== 0) {
+    animateValueChange(coinContainer, coinDiff);
+  }
+  coinEl.innerText = formatAttr(coinVal);
+  currentDisplayValues.Coins = coinVal;
+
+  // --- 更新並播放榮譽點數動畫 ---
+  const honorEl = document.getElementById('honorPoints');
+  const honorContainer = honorEl.parentElement;
+  const honorVal = parseFloat(data.HonorPoints) || 0;
+  const oldHonorVal = parseFloat(currentDisplayValues.HonorPoints) || 0;
+  const honorDiff = Math.round(honorVal - oldHonorVal);
+  if (honorDiff !== 0) {
+    animateValueChange(honorContainer, honorDiff);
+  }
+  honorEl.innerText = formatAttr(honorVal);
+  currentDisplayValues.HonorPoints = honorVal;
 
   const fieldToIdMap = {
     Cleanliness: 'cleanliness',
     Mood: 'mood',
     Energy: 'energy',
     Health: 'health',
-    SelfDiscipline: 'selfDiscipline'
+    SelfDiscipline: 'selfDiscipline',
   };
 
   Object.entries(fieldToIdMap).forEach(([field, id]) => {
     const num = Number(data[field]) || 0;
+    const oldNum = Number(currentDisplayValues[field]) || 0;
+    const diff = Math.round(num - oldNum);
+
     const bar = document.getElementById(id);
     const label = document.getElementById(`${id}-label`);
-    if (bar) bar.style.width = `${num}%`;
+
+    // --- 更新並播放屬性動畫 ---
+    if (diff !== 0 && label) {
+      animateValueChange(label, diff);
+    }
+
+    if (bar) {
+      // 讓屬性條的變化也帶有過渡效果
+      bar.style.transition = 'width 0.5s ease-in-out';
+      bar.style.width = `${num}%`;
+    }
     if (label) {
       const zh = { cleanliness: "清潔度", mood: "心情", energy: "精力", health: "健康", selfDiscipline: "自律" }[id];
       label.innerText = `${zh} ${Math.round(num)}/100`;
     }
+    currentDisplayValues[field] = num; // 更新當前值
   });
 }
 
@@ -1317,6 +1438,40 @@ function updateSidePanel(data) {
   statusBox.innerHTML = (data.StatusList && data.StatusList.length > 0)
     ? data.StatusList.map(s => `<div class="status-item">⚠️ ${s.StatusName}<div class="status-detail">${s.Effect}</div></div>`).join('')
     : `<div class="status-item">🟢 無異常狀態</div>`;
+}
+
+/**
+ * [新函式] 播放數值變動動畫
+ * @param {HTMLElement} targetElement - 動畫要顯示在哪個元素附近
+ * @param {number} change - 變動的數值 (正數或負數)
+ */
+function animateValueChange(targetElement, change) {
+  if (!targetElement || change === 0) return;
+
+  const changeText = change > 0 ? `+${change}` : `${change}`;
+  const color = change > 0 ? '#28a745' : '#dc3545'; // 綠色代表增加，紅色代表減少
+
+  const animationEl = document.createElement('span');
+  animationEl.className = 'value-change-animation';
+  animationEl.innerText = changeText;
+  animationEl.style.color = color;
+
+  // 將動畫元素添加到 body 中，並根據目標元素定位
+  document.body.appendChild(animationEl);
+  const rect = targetElement.getBoundingClientRect();
+  animationEl.style.left = `${rect.left + rect.width / 2 - animationEl.offsetWidth / 2}px`;
+  animationEl.style.top = `${rect.top - animationEl.offsetHeight}px`;
+
+  // 為目標元素添加短暫的高亮效果
+  targetElement.classList.add('highlight-change');
+  setTimeout(() => {
+    targetElement.classList.remove('highlight-change');
+  }, 800);
+
+  // 動畫結束後移除元素
+  setTimeout(() => {
+    animationEl.remove();
+  }, 1900);
 }
 
 // ✅ 新增：更新頂部狀態加成顯示的函式
@@ -1540,13 +1695,19 @@ let pendingUseMax = 1;
 
 function handleUseItem(itemID, encodedItemName, maxCount, itemType) {
   // 對於這些一次性使用的道具，或數量只有1的，直接使用
-  const singleUseTypes = ['TreasureChest', 'Redeemable', 'OneTimeDiscountCoupon'];
+  const singleUseTypes = ['TreasureChest', 'Redeemable', 'OneTimeDiscountCoupon', 'BuffItem'];
   const itemName = decodeURIComponent(encodedItemName);
   if (singleUseTypes.includes(itemType) || maxCount === 1) {
     showConfirmModal(
       `🎒 使用道具`,
       `確定要使用 <strong>${itemName}</strong> 嗎？`,
-      () => useItem(itemID, 1)
+      () => {
+        if (itemType === 'TreasureChest') {
+          playChestAnimationAndOpen(1, itemID, false);
+        } else {
+          useItem(itemID, 1);
+        }
+      }
     );
   } else {
     // 對於其他可堆疊的道具 (如 Consumable)，顯示數量選擇視窗
@@ -1572,16 +1733,21 @@ function confirmUse() {
 }
 
 function useItem(itemID, quantity) {
-  google.script.run
-    .withSuccessHandler((msg) => {
-      showToast(msg || "✅ 操作成功！"); // ✅ 顯示後端回傳的客製化訊息
-      refreshMainGameUI();
-      openBag(); // 重新刷新背包
-    })
-    .withFailureHandler(err => {
-      showToast("❌ 錯誤：" + err.message);
-    })
-    .useItem(itemID, quantity);
+  // ✅ 顯示載入遮罩
+  document.getElementById('loading-overlay').classList.remove('hidden');
+
+  google.script.run.withSuccessHandler(response => {
+    document.getElementById('loading-overlay').classList.add('hidden');
+    showToast(response.message || "✅ 操作成功！");
+    
+    // ✅ 直接使用後端回傳的最新資料來更新介面，無需再次請求
+    updateHeaderBar(response.profileData);
+    updateSidePanel(response.profileData);
+    openBag(); // 刷新背包
+  }).withFailureHandler(err => {
+    document.getElementById('loading-overlay').classList.add('hidden');
+    showToast("❌ 錯誤：" + err.message);
+  }).useItem(itemID, quantity);
 }
 
 // ✅ 新增：從背包十連開
@@ -1589,18 +1755,7 @@ function useTenItems(itemID) {
   showConfirmModal(
     `🎉 開啟10個寶箱`,
     `確定要一次使用 <strong>10 個</strong> 寶箱嗎？`,
-    () => {
-      showToast("⏳ 正在開啟 10 個寶箱...", 3000);
-      google.script.run
-        .withSuccessHandler(results => {
-          showToast("🎉 十連開完成！");
-          refreshMainGameUI();
-          openBag(); // 刷新背包
-          renderTenPullResults(results); // 顯示結果 Modal
-        })
-        .withFailureHandler(err => { showToast("❌ 開啟失敗：" + err.message); })
-        .useTenItems(itemID);
-    }
+    () => playChestAnimationAndOpen(10, itemID, false)
   );
 }
 
@@ -1836,19 +1991,7 @@ function buyTenItems(itemID) {
   showConfirmModal(
     `🎉 進行十連抽`,
     `確定要進行十連抽嗎？<br>將會消耗10倍的價格。`,
-    () => {
-      showToast("⏳ 正在進行十連抽...", 3000);
-      google.script.run
-        .withSuccessHandler(results => {
-          showToast("🎉 十連抽完成！");
-          refreshMainGameUI(() => { // ✅ 使用回呼函式確保順序
-            refreshShopItems();
-          });
-          renderTenPullResults(results); // 顯示結果
-        })
-        .withFailureHandler(err => { showToast("❌ 十連抽失敗：" + err.message); })
-        .buyAndOpenTenItems(itemID);
-    }
+    () => playChestAnimationAndOpen(10, itemID, true)
   );
 }
 
@@ -1888,6 +2031,52 @@ function showConfirmModal(title, message, onConfirm) {
   };
 
   document.getElementById('generic-confirm-modal').classList.remove('hidden');
+}
+
+/**
+ * [新函式] 播放開箱動畫並處理後端呼叫
+ * @param {number} quantity - 開啟數量 (1 或 10)
+ * @param {string} itemID - 寶箱的 ItemID
+ * @param {boolean} isPurchase - 是否為從商店購買 (影響刷新邏輯)
+ */
+function playChestAnimationAndOpen(quantity, itemID, isPurchase = false) {
+  const modal = document.getElementById('chest-opening-modal');
+  const img = document.getElementById('chest-animation-img');
+  const text = document.getElementById('chest-opening-text');
+
+  text.innerText = quantity === 1 ? '正在開啟寶箱...' : '正在進行十連抽...';
+  modal.classList.remove('hidden');
+  img.classList.add('shake');
+  
+  // 在晃動動畫結束後 (0.8秒)，開始播放發光動畫，讓等待過程不單調
+  setTimeout(() => {
+    img.classList.remove('shake');
+    img.classList.add('pulsing');
+  }, 800);
+
+  const successHandler = (results) => {
+    modal.classList.add('hidden'); // 隱藏動畫
+    img.classList.remove('pulsing'); // 停止發光
+    showToast(`🎉 開箱完成！`);
+    if (isPurchase) {
+      refreshMainGameUI(refreshShopItems);
+    } else {
+      refreshMainGameUI(openBag); // 刷新背包
+    }
+    renderTenPullResults(results); // 顯示結果
+  };
+
+  const failureHandler = (err) => {
+    modal.classList.add('hidden');
+    // 確保所有動畫 class 都被移除
+    img.classList.remove('shake'); 
+    img.classList.remove('pulsing');
+    showToast(`❌ 開啟失敗：` + err.message);
+  };
+
+  if (quantity === 1) google.script.run.withSuccessHandler(successHandler).withFailureHandler(failureHandler).useItem(itemID, 1);
+  else if (isPurchase) google.script.run.withSuccessHandler(successHandler).withFailureHandler(failureHandler).buyAndOpenTenItems(itemID);
+  else google.script.run.withSuccessHandler(successHandler).withFailureHandler(failureHandler).useTenItems(itemID);
 }
 </script>
 
