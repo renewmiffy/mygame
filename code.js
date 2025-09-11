@@ -1445,8 +1445,6 @@ function buyItem(itemID) {
  * @returns {Array<object>} - 包含 10 個獎勵物品的陣列
  */
 function buyAndOpenTenItems(itemID) {
-  const GUARANTEE_RARITY = 4; // 保底的星級 (4星)
-
   // ✅ 輔助函式：執行單次兩階段抽獎 (與 useItem 內的版本相同)
   function _performSinglePull(lootTable, allItemData, allItemHeaders) {
       const totalWeight = lootTable.reduce((sum, item) => sum + (item.Weight || 0), 0);
@@ -1516,15 +1514,21 @@ function buyAndOpenTenItems(itemID) {
     results.push(_performSinglePull(lootTable, itemData, itemHeaders));
   }
 
-  // --- 3. 檢查並觸發保底機制 ---
-  const hasGuaranteedItem = results.some(r => r.type === 'item' && parseInt(r.rarity) >= GUARANTEE_RARITY);
-  if (!hasGuaranteedItem) {
-    Logger.log(`[十連抽] 未抽中 ${GUARANTEE_RARITY}★ 以上道具，觸發保底機制！`);
-    const guaranteedLootTable = lootTable.filter(l => (l.Type || "ItemRarity") === "ItemRarity" && parseInt(l.Rarity) >= GUARANTEE_RARITY);
-    if (guaranteedLootTable.length > 0) {
-      const guaranteedItem = _performSinglePull(guaranteedLootTable, itemData, itemHeaders);
-      results[9] = guaranteedItem; // 替換最後一個結果
-      Logger.log(`[十連抽] 保底抽中：${guaranteedItem.rarity}★ ${guaranteedItem.itemName}`);
+  // --- 3. 檢查並觸發動態保底機制 ---
+  const itemRarityLoot = lootTable.filter(l => (l.Type || "ItemRarity") === "ItemRarity");
+  if (itemRarityLoot.length > 0) {
+    const maxRarity = Math.max(...itemRarityLoot.map(l => parseInt(l.Rarity) || 0));
+    const hasGuaranteedItem = results.some(r => r.type === 'item' && parseInt(r.rarity) === maxRarity);
+
+    if (!hasGuaranteedItem) {
+      Logger.log(`[十連抽] 未抽中該獎池最高星級 ${maxRarity}★ 道具，觸發保底機制！`);
+      const guaranteedLootTable = itemRarityLoot.filter(l => parseInt(l.Rarity) === maxRarity);
+      
+      if (guaranteedLootTable.length > 0) {
+        const guaranteedItem = _performSinglePull(guaranteedLootTable, itemData, itemHeaders);
+        results[9] = guaranteedItem; // 替換最後一個結果
+        Logger.log(`[十連抽] 保底抽中：${guaranteedItem.rarity}★ ${guaranteedItem.itemName}`);
+      }
     }
   }
 
@@ -1594,8 +1598,6 @@ function buyAndOpenTenItems(itemID) {
  * @returns {Array<object>} - 包含 10 個獎勵物品的陣列
  */
 function useTenItems(itemID) {
-  const GUARANTEE_RARITY = 4; // 保底的星級 (4星)
-
   // 輔助函式：執行單次兩階段抽獎
   function _performSinglePull(lootTable, allItemData, allItemHeaders) {
       const totalWeight = lootTable.reduce((sum, item) => sum + (item.Weight || 0), 0);
@@ -1655,14 +1657,21 @@ function useTenItems(itemID) {
     results.push(_performSinglePull(lootTable, itemData, itemHeaders));
   }
 
-  // --- 3. 檢查並觸發保底機制 ---
-  const hasGuaranteedItem = results.some(r => r.type === 'item' && parseInt(r.rarity) >= GUARANTEE_RARITY);
-  if (!hasGuaranteedItem) {
-    const guaranteedLootTable = lootTable.filter(l => (l.Type || "ItemRarity") === "ItemRarity" && parseInt(l.Rarity) >= GUARANTEE_RARITY);
-    if (guaranteedLootTable.length > 0) {
-      const guaranteedItem = _performSinglePull(guaranteedLootTable, itemData, itemHeaders);
-      results[9] = guaranteedItem; // 替換最後一個結果
-      Logger.log(`[十連開] 保底抽中：${guaranteedItem.rarity}★ ${guaranteedItem.itemName}`);
+  // --- 3. 檢查並觸發動態保底機制 ---
+  const itemRarityLoot = lootTable.filter(l => (l.Type || "ItemRarity") === "ItemRarity");
+  if (itemRarityLoot.length > 0) {
+    const maxRarity = Math.max(...itemRarityLoot.map(l => parseInt(l.Rarity) || 0));
+    const hasGuaranteedItem = results.some(r => r.type === 'item' && parseInt(r.rarity) === maxRarity);
+
+    if (!hasGuaranteedItem) {
+      Logger.log(`[十連開] 未抽中該獎池最高星級 ${maxRarity}★ 道具，觸發保底機制！`);
+      const guaranteedLootTable = itemRarityLoot.filter(l => parseInt(l.Rarity) === maxRarity);
+
+      if (guaranteedLootTable.length > 0) {
+        const guaranteedItem = _performSinglePull(guaranteedLootTable, itemData, itemHeaders);
+        results[9] = guaranteedItem; // 替換最後一個結果
+        Logger.log(`[十連開] 保底抽中：${guaranteedItem.rarity}★ ${guaranteedItem.itemName}`);
+      }
     }
   }
 
