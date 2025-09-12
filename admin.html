@@ -4,8 +4,8 @@
     <base target="_top">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px; background-color: #f4f4f9; color: #333; font-size: 20px; }
-      .container { max-width: 700px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px; background-color: #f4f4f9; color: #333; font-size: 16px; }
+      .container { max-width: 700px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
       h1 { color: #4a4a4a; font-size: 1.5em; }
       #loading, #message { margin-top: 20px; font-weight: bold; padding: 10px; border-radius: 5px; text-align: center; }
       .item-list { list-style: none; padding: 0; }
@@ -13,10 +13,94 @@
       .item-details { flex-grow: 1; }
       .item-details strong { font-size: 1.1em; color: #333; }
       .item-details span { font-size: 0.9em; color: #666; display: block; margin-top: 4px; }
-      .verify-btn { padding: 12px 18px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; font-weight: bold; background-color: #007bff; color: white; text-decoration: none; text-align: center; }
+      .verify-btn { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.9em; font-weight: bold; background-color: #007bff; color: white; text-decoration: none; text-align: center; }
+      
+      /* 新增的表單樣式 */
+      .form-group { margin-bottom: 15px; }
+      label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+      input[type="text"], input[type="number"], textarea {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 1em;
+        box-sizing: border-box; /* 確保 padding 不會讓寬度超標 */
+      }
+      textarea { font-family: Consolas, "Courier New", monospace; }
+      .send-btn {
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 1.1em;
+        font-weight: bold;
+        background-color: #28a745; /* Green */
+        color: white;
+      }
+      #send-mail-message { margin-top: 15px; font-weight: bold; padding: 10px; border-radius: 5px; text-align: center; display: none; }
+
+      /* 獎勵產生器樣式 */
+      .reward-builder { border: 1px solid #ddd; padding: 10px 15px; margin-top: 10px; border-radius: 4px; }
+      .reward-builder legend { font-weight: bold; font-size: 0.9em; padding: 0 5px; color: #555; }
+      .reward-row, .add-item-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+      .reward-row label { flex-basis: 100px; text-align: right; margin-bottom: 0; }
+      .add-item-row { margin-top: 15px; }
+      #item-selector { flex-grow: 1; padding: 8px; }
+      #item-quantity { width: 80px; text-align: center; }
+      #add-item-btn { background-color: #17a2b8; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+      .added-item { display: flex; justify-content: space-between; align-items: center; background: #e9ecef; padding: 5px 10px; border-radius: 4px; margin-bottom: 5px; font-size: 0.9em; }
+      .remove-item-btn { background: #6c757d; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-weight: bold; line-height: 22px; text-align: center; }
     </style>
   </head>
   <body>
+    <!-- ✅ 新增：發送郵件區塊 -->
+    <div class="container">
+      <h1>📬 發送郵件/獎勵</h1>
+      <form id="send-mail-form">
+        <div class="form-group">
+          <label for="mail-title">郵件標題</label>
+          <input type="text" id="mail-title" required>
+        </div>
+        <div class="form-group">
+          <label for="mail-message">郵件內文</label>
+          <textarea id="mail-message" rows="4" required></textarea>
+        </div>
+        <div class="form-group">
+          <label>獎勵內容 (可留空)</label>
+          <fieldset class="reward-builder">
+            <legend>貨幣</legend>
+            <div class="reward-row">
+              <label for="reward-coins">💰 金幣</label>
+              <input type="number" id="reward-coins" min="0" placeholder="數量">
+            </div>
+            <div class="reward-row">
+              <label for="reward-honor">⭐ 榮譽點數</label>
+              <input type="number" id="reward-honor" min="0" placeholder="數量">
+            </div>
+          </fieldset>
+          <fieldset class="reward-builder">
+            <legend>道具</legend>
+            <div id="reward-items-list">
+              <!-- 已新增的道具會顯示在這裡 -->
+            </div>
+            <div class="add-item-row">
+              <select id="item-selector"><option value="">載入道具列表中...</option></select>
+              <input type="number" id="item-quantity" min="1" value="1" placeholder="數量">
+              <button type="button" id="add-item-btn">＋ 新增道具</button>
+            </div>
+          </fieldset>
+        </div>
+        <div class="form-group">
+          <label for="mail-expiry">有效天數 (預設 30 天)</label>
+          <input type="number" id="mail-expiry" value="30" min="1">
+        </div>
+        <button type="submit" class="send-btn">發送郵件</button>
+      </form>
+      <div id="send-mail-message"></div>
+    </div>
+
+    <!-- 原有的核銷區塊 -->
     <div class="container">
       <h1>⏳ 待核銷的兌換請求</h1>
       <div id="loading">正在載入...</div>
@@ -25,11 +109,99 @@
     </div>
 
     <script>
+      // ✅ 新增：處理郵件發送表單
+      document.getElementById('send-mail-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const title = document.getElementById('mail-title').value;
+        const message = document.getElementById('mail-message').value;
+        const expiryDays = document.getElementById('mail-expiry').value;
+        const msgDiv = document.getElementById('send-mail-message');
+        const sendBtn = document.querySelector('.send-btn');
+
+        // --- 從新介面建立獎勵 JSON ---
+        const rewardObject = {};
+        const coins = parseInt(document.getElementById('reward-coins').value);
+        if (coins > 0) rewardObject.Coins = coins;
+
+        const honor = parseInt(document.getElementById('reward-honor').value);
+        if (honor > 0) rewardObject.HonorPoints = honor;
+
+        const items = [];
+        document.querySelectorAll('.added-item').forEach(itemDiv => {
+          items.push({
+            ItemID: itemDiv.dataset.itemId,
+            Quantity: parseInt(itemDiv.dataset.quantity)
+          });
+        });
+        if (items.length > 0) rewardObject.Items = items;
+        
+        const rewardJson = Object.keys(rewardObject).length > 0 ? JSON.stringify(rewardObject) : "";
+        // --- 建立結束 ---
+
+        sendBtn.disabled = true;
+        sendBtn.textContent = '發送中...';
+        msgDiv.style.display = 'none';
+
+        google.script.run
+          .withSuccessHandler(function(response) {
+            msgDiv.textContent = response;
+            msgDiv.style.backgroundColor = '#d4edda';
+            msgDiv.style.color = '#155724';
+            msgDiv.style.display = 'block';
+            // 清空表單和獎勵產生器
+            document.getElementById('mail-title').value = '';
+            document.getElementById('mail-message').value = '';
+            document.getElementById('reward-coins').value = '';
+            document.getElementById('reward-honor').value = '';
+            document.getElementById('reward-items-list').innerHTML = '';
+            document.getElementById('item-quantity').value = 1;
+
+            // ✅ 成功後恢復按鈕
+            sendBtn.disabled = false;
+            sendBtn.textContent = '發送郵件';
+          })
+          .withFailureHandler(showSendMailError)
+          .sendAdminMail(title, message, rewardJson, expiryDays);
+      });
+
+      // ✅ 新增：處理新增道具按鈕
+      document.getElementById('add-item-btn').addEventListener('click', function() {
+        const selector = document.getElementById('item-selector');
+        const itemId = selector.value;
+        if (!itemId) return;
+
+        const itemName = selector.options[selector.selectedIndex].text;
+        const quantity = parseInt(document.getElementById('item-quantity').value) || 1;
+
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'added-item';
+        itemDiv.dataset.itemId = itemId;
+        itemDiv.dataset.quantity = quantity;
+        itemDiv.innerHTML = `
+          <span>${itemName} x ${quantity}</span>
+          <button type="button" class="remove-item-btn" onclick="this.parentElement.remove()">×</button>
+        `;
+        document.getElementById('reward-items-list').appendChild(itemDiv);
+      });
+
       window.onload = function() {
+        // 載入待核銷列表
         google.script.run
           .withSuccessHandler(renderList)
           .withFailureHandler(showError)
           .getPendingRedemptions();
+
+        // ✅ 新增：載入獎勵選項 (道具列表)
+        google.script.run
+          .withSuccessHandler(function(options) {
+            const selector = document.getElementById('item-selector');
+            selector.innerHTML = '<option value="">-- 請選擇道具 --</option>'; // 清空"載入中"
+            options.items.forEach(item => {
+              selector.innerHTML += `<option value="${item.id}">${item.name}</option>`;
+            });
+          })
+          .getAdminRewardOptions();
       };
 
       function renderList(items) {
@@ -45,10 +217,10 @@
           return;
         }
 
-        const baseUrl = "<?= ScriptApp.getService().getUrl() ?>";
         let html = '';
         items.forEach(item => {
-          const verifyUrl = `${baseUrl}?page=verify&token=${item.Token}`;
+          // ✅ 修正：直接在 href 中組合 URL，並移除有問題的樣板語法
+          const verifyUrl = `<?= ScriptApp.getService().getUrl() ?>?page=verify&token=${item.Token}`;
           html += `
             <li class="item">
               <div class="item-details">
@@ -69,6 +241,20 @@
         msgDiv.innerText = "錯誤：" + error.message;
         msgDiv.style.backgroundColor = '#f8d7da';
         msgDiv.style.color = '#721c24';
+      }
+
+      // ✅ 新增：處理郵件發送的錯誤
+      function showSendMailError(error) {
+        const msgDiv = document.getElementById('send-mail-message');
+        msgDiv.innerText = "錯誤：" + error.message;
+        msgDiv.style.backgroundColor = '#f8d7da';
+        msgDiv.style.color = '#721c24';
+        msgDiv.style.display = 'block';
+
+        // ✅ 失敗後也要恢復按鈕
+        const sendBtn = document.querySelector('.send-btn');
+        sendBtn.disabled = false;
+        sendBtn.textContent = '發送郵件';
       }
     </script>
   </body>

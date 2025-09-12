@@ -470,6 +470,9 @@ body {
   <div class="bottom-item" onclick="openShop()"> <!-- 尚未實作 -->
     <img src="https://renewmiffy.github.io/mygame/img/icons/shop.webp" alt="商店" width="60">
   </div>
+  <div class="bottom-item" onclick="openMailbox()">
+    <img src="https://renewmiffy.github.io/mygame/img/icons/mail.webp" alt="信箱" width="60"><span id="mail-badge" class="badge hidden"></span>
+  </div>
   <div class="bottom-item" onclick="openMissionModal()"> <!-- ✅ 修正後 -->
     <img src="https://renewmiffy.github.io/mygame/img/icons/todo.webp" alt="任務" width="60">
   </div>
@@ -491,7 +494,7 @@ body {
 </div>
 <!-- ✅ 問卷浮窗 -->
 <div id="survey-modal" class="adventure-modal hidden">
-  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <button onclick="tryCloseSurveyModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
   <div class="adventure-content" style="background-color: #f8f2e9; padding: 25px;">
     <h3 style="text-align:center; font-size: 1.6em; color: #5c4033; margin-bottom: 25px;">📝 每日心情問卷</h3>
     <div id="survey-questions" style="max-height: 400px; overflow-y: auto; padding: 5px 15px;"></div>
@@ -589,6 +592,30 @@ body {
 
   </div>
 </div>
+
+<!-- ✅ 新增：信箱 Modal -->
+<div id="mail-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3>📬 我的信箱</h3>
+    <div id="mail-list-container" style="max-height: 400px; overflow-y: auto; padding-right: 10px;">
+      <!-- JS 會動態產生郵件列表 -->
+    </div>
+  </div>
+</div>
+
+<style>
+/* 信箱通知紅點 */
+.badge {
+  position: absolute; top: 5px; right: 5px;
+  background-color: red; color: white;
+  border-radius: 50%;
+  width: 18px; height: 18px;
+  font-size: 12px; line-height: 18px;
+  text-align: center;
+  font-weight: bold;
+}
+</style>
 <div id="daily-modal" class="adventure-modal hidden">
   <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
 
@@ -874,6 +901,9 @@ body {
   // ✅ 新增：全域變數，儲存當前顯示的數值，用於動畫比較
   let currentDisplayValues = {};
 
+  // ✅ 新增：全域變數，儲存問卷題目，用於驗證
+  let surveyQuestionsData = [];
+
   // 頂層開始
 google.script.run
   .withSuccessHandler(function(data) {
@@ -937,6 +967,12 @@ google.script.run
           activeEffects.nextPurchaseDiscount = data.NextPurchaseDiscount || 0;
           updateEffectsDisplay(activeEffects);
         }
+
+        // ✅ 新增：更新信箱紅點提示
+        const badge = document.getElementById('mail-badge');
+        const unreadCount = data.unreadMailCount || 0;
+        badge.textContent = unreadCount;
+        badge.classList.toggle('hidden', unreadCount === 0);
       } else {
         showToast("⚠️ 資料為空，請稍後再試");
       }
@@ -963,6 +999,7 @@ function openSurveyModal() {
 }
 
 function renderSurveyQuestions(questions) {
+  surveyQuestionsData = questions; // 儲存題目資料以供後續驗證
   const box = document.getElementById('survey-questions');
   box.innerHTML = '';
 
@@ -1014,6 +1051,23 @@ function submitSurvey() {
       formData[input.name] = input.value;
     }
   });
+
+  // 驗證是否所有問題都已回答
+  let allAnswered = true;
+  if (surveyQuestionsData.length > 0) {
+    for (const q of surveyQuestionsData) {
+      const answer = formData[q.QKey];
+      if (answer === undefined || answer === null || answer === '') {
+        allAnswered = false;
+        break;
+      }
+    }
+  }
+
+  if (!allAnswered) {
+    showToast("⚠️ 請回答所有問題才能送出！");
+    return; // 中斷送出
+  }
 
   console.log('表單送出：', formData);
 
@@ -1264,6 +1318,11 @@ function closeModal(button) {
   const modal = button.closest('.adventure-modal');
   if (modal) modal.classList.add('hidden');
 }
+
+function tryCloseSurveyModal(button) {
+  showToast("📝 請先完成並送出問卷！");
+}
+
 function openStudy() {
   document.getElementById('study-modal').classList.remove('hidden');
   loadStudyList(true); // ✅ 顯示載入中
@@ -1352,6 +1411,12 @@ function refreshMainGameUI(callback) {
         activeEffects = data.effectsSummary;
         activeEffects.nextPurchaseDiscount = data.NextPurchaseDiscount || 0;
         updateEffectsDisplay(activeEffects);
+      }
+      // ✅ 新增：刷新時也更新信箱紅點
+      const badge = document.getElementById('mail-badge');
+      const unreadCount = data.unreadMailCount || 0;
+      if (badge) {
+        badge.classList.toggle('hidden', unreadCount === 0);
       }
 
       // ✅ 如果有傳入回呼函式，則在所有狀態更新完畢後執行它
@@ -2077,6 +2142,92 @@ function playChestAnimationAndOpen(quantity, itemID, isPurchase = false) {
   if (quantity === 1) google.script.run.withSuccessHandler(successHandler).withFailureHandler(failureHandler).useItem(itemID, 1);
   else if (isPurchase) google.script.run.withSuccessHandler(successHandler).withFailureHandler(failureHandler).buyAndOpenTenItems(itemID);
   else google.script.run.withSuccessHandler(successHandler).withFailureHandler(failureHandler).useTenItems(itemID);
+}
+
+// --- 郵件系統相關函式 ---
+
+function openMailbox() {
+  document.getElementById('mail-modal').classList.remove('hidden');
+  const container = document.getElementById('mail-list-container');
+  container.innerHTML = '<div>正在載入郵件...</div>';
+  google.script.run
+    .withSuccessHandler(renderMailList)
+    .withFailureHandler(err => {
+      container.innerHTML = `<div>無法載入郵件：${err.message}</div>`;
+    })
+    .getMailList();
+}
+
+function renderMailList(mails) {
+  const container = document.getElementById('mail-list-container');
+  if (!mails || mails.length === 0) {
+    container.innerHTML = '<div style="text-align:center; padding: 20px; color: #888;">目前沒有郵件。</div>';
+    return;
+  }
+
+  let html = '';
+  mails.forEach(mail => {
+    const readClass = mail.isRead ? '' : 'font-weight: bold;';
+    const icon = mail.hasReward ? '🎁' : '✉️';
+
+    html += `
+      <div class="bag-item-container" style="background:${mail.isRead ? '#f9f9f9' : '#fffdf9'};">
+        <div class="bag-item-header" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleMailDetail(this, '${mail.id}', ${!mail.isRead})">
+            <strong style="${readClass}">${icon} ${mail.title}</strong>
+            <span style="font-size: 14px; color: #888;">${mail.sentDate}</span>
+        </div>
+        <div class="bag-item-detail hidden" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; font-size: 14px;">
+            <p style="margin: 0 0 10px 0; white-space: pre-wrap;">${mail.message}</p>
+            ${mail.hasReward ? `
+              <div style="background: #f8f2e9; padding: 8px; border-radius: 4px; margin-bottom: 10px;">
+                <strong>附件：</strong> ${mail.rewardText}
+              </div>
+              <div class="item-actions" style="text-align: right;">
+                <button id="claim-btn-${mail.id}" class="btn-claim" onclick="claimMail('${mail.id}')">領取附件</button>
+              </div>
+            ` : ''}
+        </div>
+      </div>
+    `;
+  });
+  container.innerHTML = html;
+
+  // 更新紅點
+  const unreadCount = mails.filter(m => !m.isRead).length;
+  const badge = document.getElementById('mail-badge');
+  badge.textContent = unreadCount;
+  badge.classList.toggle('hidden', unreadCount === 0);
+}
+
+function toggleMailDetail(headerElement, mailId, isUnread) {
+  toggleItemDetail(headerElement); // 借用背包的展開/收合函式
+  if (isUnread) {
+    // 標示為已讀
+    google.script.run.markMailAsRead(mailId);
+    // 前端立即反應，避免再次點擊時重複觸發
+    headerElement.onclick = () => toggleItemDetail(headerElement);
+    headerElement.querySelector('strong').style.fontWeight = 'normal';
+    headerElement.parentElement.style.backgroundColor = '#f9f9f9';
+    // 更新紅點數字
+    const badge = document.getElementById('mail-badge');
+    const currentCount = parseInt(badge.textContent) || 0;
+    const newCount = Math.max(0, currentCount - 1);
+    badge.textContent = newCount;
+    badge.classList.toggle('hidden', newCount === 0);
+  }
+}
+
+function claimMail(mailId) {
+  showToast("⏳ 正在領取獎勵...", 2000);
+  google.script.run.withSuccessHandler(response => {
+    showToast(response.message);
+    updateHeaderBar(response.profileData); // 只更新數值，避免整個畫面重載
+    document.getElementById(`claim-btn-${mailId}`).textContent = '已領取';
+    document.getElementById(`claim-btn-${mailId}`).disabled = true;
+    document.getElementById(`claim-btn-${mailId}`).classList.add('btn-disabled');
+  }).withFailureHandler(err => {
+    showToast(`❌ 領取失敗：${err.message}`);
+  }).claimMailReward(mailId);
 }
 </script>
 

@@ -12,8 +12,8 @@ function doGet(e) {
 
   // ✅ 新增：提供一個頁面來查看所有待核銷的項目
   if (e.parameter.page === 'admin') {
-    const template = HtmlService.createTemplateFromFile('admin');
-    return template.evaluate().setTitle('管理後台 - 待核銷列表').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    // ✅ 修正：admin.html 不需要樣板語法，直接輸出即可
+    return HtmlService.createHtmlOutputFromFile('admin').setTitle('管理後台').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
   // 預設回傳遊戲主頁
@@ -99,7 +99,8 @@ function getProfileData() {
     debugLog: activeStatuses.debugLog, // ✅ 將偵錯日誌一起回傳
     StatusList: statusList, // ✅ 新增
     effectsSummary: effectsSummary, // ✅ 新增
-    BuffList: buffList // ✅ 新增
+    BuffList: buffList, // ✅ 新增
+    unreadMailCount: getUnreadMailCount() // ✅ 新增：回傳未讀郵件數量
   };
 }
 function getSurveyQuestions() {
@@ -302,6 +303,16 @@ function getMissionList() {
     return row[idx];
   };
 
+  // ✅ 新增：讀取 ItemMaster 資料，用於產生更清晰的獎勵文字
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  const itemMasterData = itemSheet.getDataRange().getValues();
+  const itemMasterHeaders = itemMasterData[0];
+  const itemMasterMap = {};
+  itemMasterData.slice(1).forEach(row => {
+    const itemID = row[itemMasterHeaders.indexOf("ItemID")];
+    itemMasterMap[itemID] = { name: row[itemMasterHeaders.indexOf("ItemName")] || itemID };
+  });
+
   // ✅ 2. 建立技能資料的快取 Map，方便快速查找
   const skillData = skillSheet.getDataRange().getValues();
   const skillHeaders = skillData[0];
@@ -324,11 +335,19 @@ function getMissionList() {
   const today = formatYMD(new Date());
   const dailyData = doneTasksSheet.getDataRange().getValues().slice(1);
 
-  const todayTaskIds = dailyData
-    .filter(row => formatYMD(row[3]) === today)
-    .map(row => row[0]);
+  // ✅ 建立任務完成日期的 Map，方便快速查找
+  // { "TASK_ID_1": "2023/10/27", "TASK_ID_2": "2023/10/26" }
+  const taskLastDoneDateMap = {};
+  const doneTaskDateCol = doneTasksSheet.getRange(1, 1, 1, doneTasksSheet.getLastColumn()).getValues()[0].indexOf("LastDoneDate");
+  dailyData.forEach(row => {
+    const taskId = row[0];
+    const lastDoneDate = row[doneTaskDateCol];
+    if (taskId && lastDoneDate) taskLastDoneDateMap[taskId] = formatYMD(lastDoneDate);
+  });
 
-  const totalTaskDone = dailyData.filter(row => row[5] > 0).length;
+  // ✅ 修正：從計算「總完成數」改為計算「今天完成的任務數」
+  const tasksDoneTodayCount = Object.values(taskLastDoneDateMap).filter(dateStr => dateStr === today).length;
+
 
   const result = missionRows.map((row, i) => {
     const missionId = getMissionField(row, "MissionID");
@@ -345,10 +364,16 @@ function getMissionList() {
     let targetValue = 1;     // ✅ 3. 新增變數
 
     if (conditionType === "DailyTaskDoneCount") {
-      currentProgress = totalTaskDone;
+      // ✅ 修正：使用今天完成的任務數來判斷
+      currentProgress = tasksDoneTodayCount;
       targetValue = parseInt(param);
       fulfilled = currentProgress >= targetValue;
-    } else if (conditionType === "TaskDoneToday") {
+    } else if (conditionType === "TaskDoneToday") { // ✅ 修正：每日任務必須是今天完成的
+      const lastDoneDate = taskLastDoneDateMap[param];
+      const fulfilled = lastDoneDate === today;
+      currentProgress = fulfilled ? 1 : 0;
+      targetValue = 1;
+    } else if (conditionType === "TaskDoneToday_Legacy") { // 舊的邏輯，保留以防萬一
       fulfilled = todayTaskIds.includes(param);
       currentProgress = fulfilled ? 1 : 0;
       targetValue = 1;
@@ -393,9 +418,17 @@ function getMissionList() {
       const rewardObj = JSON.parse(rewardJsonString);
       // 檢查確保解析出來的是一個物件
       if (typeof rewardObj === 'object' && rewardObj !== null && !Array.isArray(rewardObj)) {
-        rewardText = Object.entries(rewardObj)
-          .map(([key, val]) => `+${val} ${key}`)
-          .join(" / ");
+        // ✅ 修正：正確處理道具獎勵的顯示
+        rewardText = Object.entries(rewardObj).map(([key, val]) => {
+          if (key === 'Items' && Array.isArray(val)) {
+            return val.map(item => {
+              const itemName = itemMasterMap[item.ItemID]?.name || item.ItemID;
+              return `${itemName} x${item.Quantity}`;
+            }).join(', ');
+          }
+          // 對於非 Items 的獎勵，維持原樣
+          return `+${val} ${key}`;
+        }).join(" / ");
       } else {
         rewardText = rewardJsonString; // 如果不是物件，直接顯示原始文字
       }
@@ -2095,6 +2128,60 @@ function getCachedFieldMap() {
 }
 
 /**
+ * [新輔助函式] 將指定道具發放到玩家背包。
+ * @param {object} itemsToAdd - 一個物件，鍵為 ItemID，值為數量。例如：{"POTION_01": 2, "SCROLL_01": 1}
+ * @returns {string} - 描述獲得物品的訊息，例如 "藥水 x2, 卷軸 x1"。
+ */
+function grantItemsToInventory(itemsToAdd) {
+  if (!itemsToAdd || Object.keys(itemsToAdd).length === 0) {
+    return "";
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const inventorySheet = ss.getSheetByName("Inventory");
+  const itemSheet = ss.getSheetByName("ItemMaster");
+
+  // 讀取道具主資料以解析道具名稱
+  const itemData = itemSheet.getDataRange().getValues();
+  const itemHeaders = itemData[0];
+  const itemMasterMap = {};
+  itemData.slice(1).forEach(row => {
+    const itemID = row[itemHeaders.indexOf("ItemID")];
+    itemMasterMap[itemID] = { name: row[itemHeaders.indexOf("ItemName")] || itemID };
+  });
+
+  // 批次發放道具的邏輯
+  const invData = inventorySheet.getDataRange().getValues();
+  const invHeaders = invData[0];
+  const invRows = invData.slice(1);
+  const itemIDCol = invHeaders.indexOf("ItemID");
+  const countCol = invHeaders.indexOf("Count");
+
+  const inventoryMap = {};
+  invRows.forEach((row, index) => {
+    if (!inventoryMap[row[itemIDCol]]) { // 只記錄第一個堆疊
+      inventoryMap[row[itemIDCol]] = { count: parseInt(row[countCol]) || 0, sheetRow: index + 2 };
+    }
+  });
+
+  const rowsToAppend = [];
+  Object.entries(itemsToAdd).forEach(([id, qty]) => {
+    if (inventoryMap[id]) { // 假設所有獎勵道具都可堆疊
+      inventorySheet.getRange(inventoryMap[id].sheetRow, countCol + 1).setValue(inventoryMap[id].count + qty);
+    } else {
+      rowsToAppend.push(invHeaders.map(h => (h === "ItemID") ? id : (h === "Count" ? qty : "")));
+    }
+  });
+
+  if (rowsToAppend.length > 0) {
+    inventorySheet.getRange(inventorySheet.getLastRow() + 1, 1, rowsToAppend.length, invHeaders.length).setValues(rowsToAppend);
+  }
+
+  // 產生回傳訊息
+  return Object.entries(itemsToAdd).map(([id, qty]) => `${itemMasterMap[id]?.name || id} x${qty}`).join(', ');
+}
+
+/**
  * [核心獎勵處理函式] 根據玩家狀態，計算並套用最終獎勵。
  * @param {object} profile - 玩家的 profile 物件 (會被直接修改)。
  * @param {object} rewards - 原始獎勵物件，例如 { "Coins": 100, "Health": 5 }。
@@ -2109,7 +2196,23 @@ function applyRewards(profile, rewards, source) {
   const messageParts = [];
   const fieldMap = getCachedFieldMap(); // ✅ 取得欄位對照表
 
+  // --- 1. 處理道具獎勵 ---
+  if (rewards.Items && Array.isArray(rewards.Items)) {
+    const itemsToAdd = {};
+    rewards.Items.forEach(item => {
+      if (item.ItemID && item.Quantity > 0) {
+        itemsToAdd[item.ItemID] = (itemsToAdd[item.ItemID] || 0) + parseInt(item.Quantity);
+      }
+    });
+    if (Object.keys(itemsToAdd).length > 0) {
+      const grantedItemsMessage = grantItemsToInventory(itemsToAdd);
+      if (grantedItemsMessage) messageParts.push(grantedItemsMessage);
+    }
+  }
+
+  // --- 2. 處理數值獎勵 (金幣、屬性等) ---
   Object.entries(rewards).forEach(([field, value]) => {
+    if (field === 'Items') return; // 忽略道具陣列，前面已處理
     let finalValue = parseFloat(value) || 0;
 
     // 只對非道具的獎勵套用加成
@@ -2234,4 +2337,195 @@ function calculateEffectsSummary(activeStatuses) {
   });
 
   return summary;
+}
+
+/**
+ * [郵件系統] 獲取玩家的郵件列表 (未過期、未領取)。
+ * @returns {Array<object>} 郵件物件陣列。
+ */
+function getMailList() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const mailSheet = ss.getSheetByName('Mailbox');
+  if (!mailSheet || mailSheet.getLastRow() < 2) return [];
+
+  const data = mailSheet.getDataRange().getValues();
+  const headers = data[0];
+  const now = new Date();
+
+  // 取得道具名稱對照，用於產生獎勵文字
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  const itemMasterData = itemSheet.getDataRange().getValues();
+  const itemMasterHeaders = itemMasterData[0];
+  const itemMasterMap = {};
+  itemMasterData.slice(1).forEach(row => {
+    const itemID = row[itemMasterHeaders.indexOf("ItemID")];
+    itemMasterMap[itemID] = { name: row[itemMasterHeaders.indexOf("ItemName")] || itemID };
+  });
+
+  const mails = data.slice(1).map((row, index) => {
+    const mail = {};
+    headers.forEach((h, i) => mail[h] = row[i]);
+    mail.sheetRow = index + 2; // 記下實際列號方便更新
+    return mail;
+  }).filter(mail => {
+    const isClaimed = mail.IsClaimed === true;
+    const expiryDate = mail.ExpiryDate instanceof Date ? mail.ExpiryDate : null;
+    const isExpired = expiryDate ? expiryDate < now : false;
+    return !isClaimed && !isExpired;
+  }).map(mail => {
+    let rewardText = "";
+    try {
+      const rewardObj = JSON.parse(mail.RewardJSON || '{}');
+      rewardText = Object.entries(rewardObj).map(([key, val]) => {
+        if (key === 'Items' && Array.isArray(val)) {
+          return val.map(item => `${itemMasterMap[item.ItemID]?.name || item.ItemID} x${item.Quantity}`).join(', ');
+        }
+        return `${mapFieldToName(key, getCachedFieldMap())} +${val}`;
+      }).join(" / ");
+    } catch (e) { rewardText = "無獎勵"; }
+
+    return {
+      id: mail.MailID,
+      title: mail.Title,
+      message: mail.Message,
+      sentDate: mail.SentDate instanceof Date ? Utilities.formatDate(mail.SentDate, Session.getScriptTimeZone(), 'yyyy/MM/dd') : '',
+      isRead: mail.IsRead === true,
+      hasReward: rewardText !== "無獎勵",
+      rewardText: rewardText
+    };
+  }).sort((a, b) => new Date(b.sentDate) - new Date(a.sentDate)); // 按發送日期降序
+
+  return mails;
+}
+
+/**
+ * [郵件系統] 玩家領取郵件獎勵。
+ * @param {string} mailID - 要領取的郵件 ID。
+ * @returns {object} 包含訊息和最新玩家狀態的物件。
+ */
+function claimMailReward(mailID) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000); // 等待最多 10 秒
+
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const mailSheet = ss.getSheetByName('Mailbox');
+    const data = mailSheet.getDataRange().getValues();
+    const headers = data[0];
+    const idCol = headers.indexOf('MailID');
+    const claimedCol = headers.indexOf('IsClaimed');
+
+    const mailIndex = data.slice(1).findIndex(row => row[idCol] === mailID);
+    if (mailIndex === -1) throw new Error("❌ 找不到該郵件。");
+
+    const mailRow = data[mailIndex + 1];
+    if (mailRow[claimedCol] === true) throw new Error("⚠️ 您已經領取過此獎勵。");
+
+    const profileSheet = ss.getSheetByName("Profile");
+    const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+    const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
+    const profile = {};
+    profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
+
+    const rewardJSON = mailRow[headers.indexOf('RewardJSON')];
+    const rewardObj = JSON.parse(rewardJSON || '{}');
+
+    const { message } = applyRewards(profile, rewardObj, `郵件獎勵 - ${mailRow[headers.indexOf('Title')]}`);
+
+    // 更新郵件狀態
+    mailSheet.getRange(mailIndex + 2, claimedCol + 1).setValue(true);
+    mailSheet.getRange(mailIndex + 2, headers.indexOf('IsRead') + 1).setValue(true);
+
+    return { message: `✅ 獎勵已領取：${message}`, profileData: getQuickStatus() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * [郵件系統] 將郵件標示為已讀。
+ * @param {string} mailID - 郵件 ID。
+ */
+function markMailAsRead(mailID) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const mailSheet = ss.getSheetByName('Mailbox');
+  const data = mailSheet.getDataRange().getValues();
+  const idCol = data[0].indexOf('MailID');
+  const readCol = data[0].indexOf('IsRead');
+
+  const mailIndex = data.slice(1).findIndex(row => row[idCol] === mailID);
+  if (mailIndex !== -1) {
+    mailSheet.getRange(mailIndex + 2, readCol + 1).setValue(true);
+  }
+}
+
+/**
+ * [郵件系統] 獲取未讀郵件的數量。
+ */
+function getUnreadMailCount() {
+  const mails = getMailList();
+  return mails.filter(m => !m.isRead).length;
+}
+
+/**
+ * [管理後台用] 發送一封系統郵件給玩家。
+ * @param {string} title - 郵件標題。
+ * @param {string} message - 郵件內文。
+ * @param {string} rewardJson - 獎勵內容的 JSON 字串。
+ * @param {number} expiryDays - 郵件的有效天數。
+ * @returns {string} 執行結果訊息。
+ */
+function sendAdminMail(title, message, rewardJson, expiryDays) {
+  // 基本驗證
+  if (!title || !message) {
+    throw new Error("❌ 標題和內文為必填項目。");
+  }
+
+  let parsedReward = {};
+  if (rewardJson && rewardJson.trim() !== "") {
+    try {
+      parsedReward = JSON.parse(rewardJson);
+      if (typeof parsedReward !== 'object' || parsedReward === null || Array.isArray(parsedReward)) {
+        throw new Error("獎勵格式不正確，必須是 JSON 物件。");
+      }
+    } catch (e) {
+      throw new Error(`❌ 獎勵 JSON 格式錯誤：${e.message}`);
+    }
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const mailSheet = ss.getSheetByName('Mailbox');
+  if (!mailSheet) throw new Error("❌ 找不到 Mailbox 工作表。");
+
+  const now = new Date();
+  const expiry = parseInt(expiryDays) || 30; // 預設 30 天
+  const expiryDate = new Date(now.getTime() + expiry * 24 * 60 * 60 * 1000);
+
+  mailSheet.appendRow([Utilities.getUuid(), title, message, JSON.stringify(parsedReward), now, expiryDate, false, false]);
+
+  return `✅ 郵件 "${title}" 已成功發送！`;
+}
+
+/**
+ * [管理後台用] 取得所有可作為獎勵的選項 (道具列表等)。
+ * @returns {object} 包含所有可選道具的物件。
+ */
+function getAdminRewardOptions() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  if (!itemSheet) return { items: [] };
+
+  const data = itemSheet.getDataRange().getValues();
+  const headers = data[0];
+  const itemIDCol = headers.indexOf("ItemID");
+  const itemNameCol = headers.indexOf("ItemName");
+
+  const items = data.slice(1).map(row => ({
+    id: row[itemIDCol],
+    name: row[itemNameCol] || row[itemIDCol]
+  })).sort((a, b) => a.name.localeCompare(b.name)); // 按名稱字母排序
+
+  return {
+    items: items
+  };
 }
