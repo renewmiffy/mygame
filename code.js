@@ -2749,7 +2749,7 @@ function getCompletedAchievements() {
     const milestoneSheet = ss.getSheetByName('MilestoneLog');
 
     let milestones = [];
-    const recents = [];
+    let recents = [];
 
     // 1. 【效能優化】直接從 MilestoneLog 工作表讀取里程碑
     if (milestoneSheet && milestoneSheet.getLastRow() >= 2) {
@@ -2779,7 +2779,7 @@ function getCompletedAchievements() {
 
         const recentRows = recentData.filter(row => {
           const isApproved = String(row[statusCol] || '').trim().toLowerCase() === 'approved';
-          const isLongTerm = (isLongTermCol !== -1) ? row[isLongTermCol] === true : false;
+          const isLongTerm = (isLongTermCol !== -1) ? String(row[isLongTermCol]).toLowerCase() === 'true' : false;
           return isApproved && !isLongTerm;
         });
 
