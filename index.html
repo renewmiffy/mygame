@@ -582,7 +582,7 @@ body {
     </div>
 
     <!-- 任務內容 -->
-<div id="mission-list-container">
+<div id="mission-list-container" style="max-height: 400px; overflow-y: auto; padding-right: 10px;">
   <div id="mission-list-daily" class="tab-content"></div>
   <div id="mission-list-achievement" class="tab-content hidden"></div>
 </div>
@@ -1226,11 +1226,7 @@ function renderMissionList(missions) {
 
       html += `<tr>
         <td>${m.name}${progressHtml}</td>
-        <td>${
-  (m.rewardText || '')
-    .replace(/\+(\d+)\s(\w+)/g, (_, val, field) => `+${val} ${mapFieldToName(field)}`)
-}</td>
-
+        <td>${m.rewardText || ''}</td>
         <td>${statusText}</td>
         <td>${button}</td>
       </tr>`;

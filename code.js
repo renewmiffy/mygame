@@ -416,6 +416,9 @@ function getMissionList() {
     const rewardJsonString = getMissionField(row, "獎勵") || "{}";
     try {
       const rewardObj = JSON.parse(rewardJsonString);
+      // ✅ 新增：取得欄位對照表以翻譯貨幣/屬性名稱
+      const fieldMap = getCachedFieldMap();
+
       // 檢查確保解析出來的是一個物件
       if (typeof rewardObj === 'object' && rewardObj !== null && !Array.isArray(rewardObj)) {
         // ✅ 修正：正確處理道具獎勵的顯示
@@ -426,8 +429,8 @@ function getMissionList() {
               return `${itemName} x${item.Quantity}`;
             }).join(', ');
           }
-          // 對於非 Items 的獎勵，維持原樣
-          return `+${val} ${key}`;
+          // ✅ 修正：對於非 Items 的獎勵，使用對照表翻譯
+          return `+${val} ${mapFieldToName(key, fieldMap)}`;
         }).join(" / ");
       } else {
         rewardText = rewardJsonString; // 如果不是物件，直接顯示原始文字
