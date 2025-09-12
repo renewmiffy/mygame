@@ -14,6 +14,16 @@
       .item-details { flex-grow: 1; }
       .item-details strong { font-size: 1.1em; color: #333; }
       .item-details span { font-size: 0.9em; color: #666; display: block; margin-top: 4px; } 
+      /* ✅ 新增：管理後台用的紅點樣式 */
+      .admin-badge {
+        display: inline-block;
+        background-color: #dc3545;
+        color: white;
+        padding: 2px 8px;
+        font-size: 0.8em;
+        border-radius: 10px;
+        margin-left: 10px;
+      }
       .verify-btn { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.9em; font-weight: bold; background-color: #007bff; color: white; text-decoration: none; text-align: center; }
       
       /* 新增的表單樣式 */
@@ -125,7 +135,7 @@
 
     <!-- ✅ 新增：待審核成就區塊 -->
     <div class="container">
-      <h1>🏆 待審核的成就</h1>
+      <h1 id="achievement-title-header">🏆 待審核的成就</h1> <!-- ✅ 修正：移除重複的 h1 標籤 -->
       <div id="achievement-loading">正在載入...</div>
       <ul id="achievement-list" class="item-list"></ul>
     </div>
@@ -305,6 +315,14 @@
               mailSelector.innerHTML += optionHtml;
               achSelector.innerHTML += optionHtml;
             });
+
+            // ✅ 新增：更新成就區塊的標題紅點
+            const achCount = options.pendingAchievementsCount || 0;
+            const achHeader = document.getElementById('achievement-title-header');
+            if (achCount > 0) {
+              const badge = `<span class="admin-badge">${achCount}</span>`;
+              achHeader.innerHTML = `🏆 待審核的成就 ${badge}`;
+            }
           })
           .getAdminRewardOptions();
       };

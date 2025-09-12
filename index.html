@@ -103,6 +103,7 @@ body {
 
     .bottom-item {
       background: #fef9f4; border: 2px solid #d1cfc7; border-radius: 22px; width: 75px; height: 85px; /* 調整按鈕大小 */
+      position: relative; /* ✅ 關鍵修正：讓紅點可以相對於此元素定位 */
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       box-shadow: 2px 2px 5px rgba(0,0,0,0.1); cursor: pointer;
     }
@@ -624,6 +625,13 @@ body {
   font-size: 12px; line-height: 18px;
   text-align: center;
   font-weight: bold;
+}
+</style>
+<!-- ✅ 新增：手動標示已讀按鈕的樣式 -->
+<style>
+.btn-mark-read {
+  background-color: #6c757d; color: white; border: none; padding: 8px 12px;
+  border-radius: 5px; font-weight: bold; cursor: pointer;
 }
 </style>
 <div id="daily-modal" class="adventure-modal hidden">
@@ -1351,16 +1359,18 @@ function renderDailyTaskButtons(tasks) {
     } else {
       // 如果尚未完成，才加上點擊事件
       card.onclick = () => {
-      google.script.run
-        .withSuccessHandler(() => {
-          showToast("✅ 任務完成！");
-          refreshMainGameUI();
-          openDailyModal(); // 重新刷新按鈕狀態
-        })
-        .withFailureHandler(err => {
-          showToast("❌ " + err.message);
-        })
-        .doDailyTask(task.id);
+        google.script.run
+          .withSuccessHandler((response) => { // ✅ 接收 response 物件
+            let toastMessage = response.message || "✅ 任務完成！";
+            if (response.penaltyInfo && response.penaltyInfo.wasApplied) {
+              toastMessage += `\n但因「${response.penaltyInfo.reason}」，獎勵被打折了！`;
+            }
+            showToast(toastMessage, 4000); // 延長顯示時間
+            refreshMainGameUI();
+            openDailyModal(); // 重新刷新按鈕狀態
+          })
+          .withFailureHandler(err => { showToast("❌ " + err.message); })
+          .doDailyTask(task.id);
       };
     }
     container.appendChild(card);
@@ -1410,14 +1420,16 @@ function loadStudyList(showLoading = true) {
       } else {
         card.onclick = () => {
           google.script.run
-            .withSuccessHandler(() => {
-              showToast(`🎓 學習 ${skill.SkillName} 完成`);
-              refreshMainGameUI();
+            .withSuccessHandler((response) => { // ✅ 接收 response 物件
+              let toastMessage = response.message || `🎓 學習 ${skill.SkillName} 完成`;
+              if (response.penaltyInfo && response.penaltyInfo.wasApplied) {
+                toastMessage += `\n但因「${response.penaltyInfo.reason}」，獎勵被打折了！`;
+              }
+              showToast(toastMessage, 4000); // 延長顯示時間
+              refreshMainGameUI(); // 刷新主介面
               refreshLearningList(); // 刷新學習列表狀態
             })
-            .withFailureHandler(err => {
-              showToast("❌ 錯誤：" + err.message);
-            })
+            .withFailureHandler(err => { showToast("❌ " + err.message); })
             .doLearning(skill.SkillID);
         };
       }
@@ -2222,8 +2234,14 @@ function renderMailList(mails) {
     const readClass = mail.isRead ? '' : 'font-weight: bold;';
     const icon = mail.hasReward ? '🎁' : '✉️';
 
+    // ✅ 新增：為沒有附件且未讀的信件準備「標示已讀」按鈕
+    let manualReadButton = '';
+    if (!mail.hasReward && !mail.isRead) {
+      manualReadButton = `<button id="mark-read-btn-${mail.id}" class="btn-mark-read" onclick="manualMarkAsRead('${mail.id}')">標示為已讀</button>`;
+    }
+
     html += `
-      <div class="bag-item-container" style="background:${mail.isRead ? '#f9f9f9' : '#fffdf9'};">
+      <div class="bag-item-container" style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px; background:${mail.isRead ? '#f9f9f9' : '#fffdf9'};">
         <div class="bag-item-header" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleMailDetail(this, '${mail.id}', ${!mail.isRead})">
             <strong style="${readClass}">${icon} ${mail.title}</strong>
             <span style="font-size: 14px; color: #888;">${mail.sentDate}</span>
@@ -2235,9 +2253,11 @@ function renderMailList(mails) {
                 <strong>附件：</strong> ${mail.rewardText}
               </div>
               <div class="item-actions" style="text-align: right;">
-                <button id="claim-btn-${mail.id}" class="btn-claim" onclick="claimMail('${mail.id}')">領取附件</button>
+                <button id="claim-btn-${mail.id}" class="btn-claim" onclick="claimMail('${mail.id}')">🎁 領取附件</button>
               </div>
-            ` : ''}
+            ` : `
+              <div class="item-actions" style="text-align: right;">${manualReadButton}</div>
+            `}
         </div>
       </div>
     `;
@@ -2253,33 +2273,51 @@ function renderMailList(mails) {
 
 function toggleMailDetail(headerElement, mailId, isUnread) {
   toggleItemDetail(headerElement); // 借用背包的展開/收合函式
-  if (isUnread) {
-    // 標示為已讀
-    google.script.run.markMailAsRead(mailId);
-    // 前端立即反應，避免再次點擊時重複觸發
-    headerElement.onclick = () => toggleItemDetail(headerElement);
-    headerElement.querySelector('strong').style.fontWeight = 'normal';
-    headerElement.parentElement.style.backgroundColor = '#f9f9f9';
-    // 更新紅點數字
-    const badge = document.getElementById('mail-badge');
-    const currentCount = parseInt(badge.textContent) || 0;
-    const newCount = Math.max(0, currentCount - 1);
-    badge.textContent = newCount;
-    badge.classList.toggle('hidden', newCount === 0);
-  }
+  // 移除自動標示已讀的邏輯，改由手動按鈕觸發
 }
 
 function claimMail(mailId) {
   showToast("⏳ 正在領取獎勵...", 2000);
   google.script.run.withSuccessHandler(response => {
     showToast(response.message);
-    updateHeaderBar(response.profileData); // 只更新數值，避免整個畫面重載
+    // ✅ 修正：使用 profileData 更新 Header 和 Side Panel
+    updateHeaderBar(response.profileData);
+    updateSidePanel(response.profileData);
+    // ✅ 新增：手動更新信箱紅點
+    const badge = document.getElementById('mail-badge');
+    badge.textContent = response.profileData.unreadMailCount;
+    badge.classList.toggle('hidden', response.profileData.unreadMailCount === 0);
     document.getElementById(`claim-btn-${mailId}`).textContent = '已領取';
     document.getElementById(`claim-btn-${mailId}`).disabled = true;
     document.getElementById(`claim-btn-${mailId}`).classList.add('btn-disabled');
   }).withFailureHandler(err => {
     showToast(`❌ 領取失敗：${err.message}`);
   }).claimMailReward(mailId);
+}
+
+/**
+ * [新函式] 手動將信件標示為已讀
+ */
+function manualMarkAsRead(mailId) {
+  const button = document.getElementById(`mark-read-btn-${mailId}`);
+  button.textContent = '處理中...';
+  button.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(newCount => {
+      showToast("✅ 已標示為已讀");
+      // 更新紅點
+      const badge = document.getElementById('mail-badge');
+      badge.textContent = newCount;
+      badge.classList.toggle('hidden', newCount === 0);
+      // 隱藏按鈕並更新信件樣式
+      button.style.display = 'none';
+      const mailContainer = button.closest('.bag-item-container');
+      mailContainer.style.backgroundColor = '#f9f9f9';
+      mailContainer.querySelector('strong').style.fontWeight = 'normal';
+    })
+    .withFailureHandler(err => { showToast(`❌ 操作失敗：${err.message}`); button.disabled = false; button.textContent = '標示為已讀'; })
+    .markMailAsReadAndGetCount(mailId);
 }
 </script>
 
@@ -2345,15 +2383,6 @@ function submitAchievement() {
       showToast(`❌ 提交失敗：${err.message}`);
     })
     .submitAchievement(category, itemName, description);
-}
-
-function switchAchievementHistoryTab(tab) {
-    document.getElementById('achievement-history-milestone').classList.toggle('hidden', tab !== 'milestone');
-    document.getElementById('achievement-history-recent').classList.toggle('hidden', tab !== 'recent');
-    document.querySelectorAll('#achievement-history-tab .secondary-tabs .tab-button').forEach(btn => {
-        const isMilestoneBtn = btn.textContent.includes('里程碑');
-        btn.classList.toggle('active', (tab === 'milestone' && isMilestoneBtn) || (tab === 'recent' && !isMilestoneBtn));
-    });
 }
 
 function renderAchievementHistory(data) {

@@ -552,7 +552,7 @@ function doDailyTask(taskId) {
   const effects = JSON.parse(getTaskField("Effects"));
   const taskName = getTaskField("任務名稱") || "未知任務";
   // ✅ 修正：使用統一的獎勵處理函式，以套用加成/折扣
-  applyRewards(profile, effects, "日常任務 - " + taskName);
+  const rewardResult = applyRewards(profile, effects, "日常任務 - " + taskName);
 
   const today = new Date();
   const taskRowIndex = taskIndex + 2;
@@ -572,6 +572,12 @@ function doDailyTask(taskId) {
   lastDoneDateCell.setValue(today);
   streakCell.setValue(newStreak);
   totalCell.setValue(totalCount + 1);
+
+  // ✅ 新增：回傳包含懲罰資訊的物件
+  return {
+    message: `✅ ${taskName} 完成！`,
+    penaltyInfo: rewardResult.penaltyInfo
+  };
 }
 
 
@@ -619,12 +625,12 @@ function doLearning(skillId) {
   const get = (field) => row[headers.indexOf(field)];
   const effects = JSON.parse(get("Effects") || "{}");
 
-  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
   const lastDate = get("LastDoneDate");
   const lastDateStr = (lastDate instanceof Date)
     ? Utilities.formatDate(lastDate, Session.getScriptTimeZone(), "yyyy/MM/dd")
     : "";
 
+  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
   if (lastDateStr === todayStr) throw new Error("⚠️ 今天已學過此技能");
 
   const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
@@ -632,13 +638,9 @@ function doLearning(skillId) {
   const profile = {};
   profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
 
-  Object.entries(effects).forEach(([field, value]) => {
-    profile[field] = (parseFloat(profile[field]) || 0) + parseFloat(value);
-  });
-
   // ✅ 加入具體技能名稱
   const skillName = get("SkillName") || "未知技能";
-  writeProfile(profile, "學習 - " + skillName);
+  const rewardResult = applyRewards(profile, effects, "學習 - " + skillName);
 
   const sheetRow = idx + 2;
   const today = new Date();
@@ -653,6 +655,12 @@ function doLearning(skillId) {
   skillSheet.getRange(sheetRow, dateIndex + 1).setValue(today);
   skillSheet.getRange(sheetRow, streakIndex + 1).setValue(newStreak);
   skillSheet.getRange(sheetRow, totalIndex + 1).setValue(newTotal);
+
+  // ✅ 新增：回傳包含懲罰資訊的物件
+  return {
+    message: `🎓 學習 ${skillName} 完成`,
+    penaltyInfo: rewardResult.penaltyInfo
+  };
 }
 
 
@@ -2181,8 +2189,18 @@ function grantItemsToInventory(itemsToAdd) {
  * @returns {{finalRewards: object, message: string}} - 包含最終獎勵值和描述訊息的物件。
  */
 function applyRewards(profile, rewards, source) {
+  // ✅ 新增：準備回傳給前端的懲罰資訊
+  let penaltyInfo = null;
   const activeStatuses = evaluateStatusRules(profile);
   const effectsSummary = calculateEffectsSummary(activeStatuses);
+
+  if (effectsSummary.globalRewardModifier < 1) {
+    const penaltyReasonStatus = activeStatuses.find(s => s.GlobalRewardModifier && parseFloat(s.GlobalRewardModifier) < 1);
+    penaltyInfo = {
+      wasApplied: true,
+      reason: penaltyReasonStatus ? penaltyReasonStatus.狀態名稱 : "狀態不佳"
+    };
+  }
 
   const finalRewards = {};
   const messageParts = [];
@@ -2236,7 +2254,8 @@ function applyRewards(profile, rewards, source) {
 
   return {
     finalRewards: finalRewards,
-    message: messageParts.join(', ')
+    message: messageParts.join(', '),
+    penaltyInfo: penaltyInfo // ✅ 新增
   };
 }
 
@@ -2368,13 +2387,15 @@ function getMailList() {
     let rewardText = "";
     try {
       const rewardObj = JSON.parse(mail.RewardJSON || '{}');
-      rewardText = Object.entries(rewardObj).map(([key, val]) => {
-        if (key === 'Items' && Array.isArray(val)) {
-          return val.map(item => `${itemMasterMap[item.ItemID]?.name || item.ItemID} x${item.Quantity}`).join(', ');
-        }
-        return `${mapFieldToName(key, getCachedFieldMap())} +${val}`;
-      }).join(" / ");
-    } catch (e) { rewardText = "無獎勵"; }
+      if (Object.keys(rewardObj).length > 0) { // ✅ 關鍵修正：只有在獎勵物件不是空的時候才產生文字
+        rewardText = Object.entries(rewardObj).map(([key, val]) => {
+          if (key === 'Items' && Array.isArray(val)) {
+            return val.map(item => `${itemMasterMap[item.ItemID]?.name || item.ItemID} x${item.Quantity}`).join(', ');
+          }
+          return `${mapFieldToName(key, getCachedFieldMap())} +${val}`;
+        }).join(" / ");
+      }
+    } catch (e) { /* 忽略解析錯誤 */ }
 
     return {
       id: mail.MailID,
@@ -2382,7 +2403,7 @@ function getMailList() {
       message: mail.Message,
       sentDate: mail.SentDate instanceof Date ? Utilities.formatDate(mail.SentDate, Session.getScriptTimeZone(), 'yyyy/MM/dd') : '',
       isRead: mail.IsRead === true,
-      hasReward: rewardText !== "無獎勵",
+      hasReward: rewardText !== "", // ✅ 關鍵修正：判斷獎勵文字是否為空
       rewardText: rewardText
     };
   }).sort((a, b) => new Date(b.sentDate) - new Date(a.sentDate)); // 按發送日期降序
@@ -2431,6 +2452,47 @@ function claimMailReward(mailID) {
     return { message: `✅ 獎勵已領取：${message}`, profileData: getQuickStatus() };
   } finally {
     lock.releaseLock();
+  }
+}
+
+/**
+ * [郵件系統] 將郵件標示為已讀，並回傳最新的未讀數量。
+ * @param {string} mailID - 郵件 ID。
+ * @returns {number} 最新的未讀郵件數量。
+ */
+function markMailAsReadAndGetCount(mailID) {
+  Logger.log(`--- [markMailAsReadAndGetCount] 開始執行，目標 MailID: "${mailID}" (類型: ${typeof mailID}) ---`);
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const mailSheet = ss.getSheetByName('Mailbox');
+    const data = mailSheet.getDataRange().getValues();
+    const headers = data[0];
+    const idCol = headers.indexOf('MailID');
+    const readCol = headers.indexOf('IsRead');
+
+    if (idCol === -1 || readCol === -1) {
+      Logger.log(`❌ 錯誤：在 Mailbox 工作表中找不到 'MailID' 或 'IsRead' 欄位。`);
+      return getUnreadMailCount();
+    }
+
+    const mailIndex = data.slice(1).findIndex(row => {
+      const sheetMailID = String(row[idCol] || '').trim();
+      const frontendMailID = String(mailID || '').trim();
+      return sheetMailID === frontendMailID;
+    });
+
+    if (mailIndex !== -1) {
+      Logger.log(`✅ 成功找到匹配的郵件，位於資料陣列索引 ${mailIndex} (工作表第 ${mailIndex + 2} 列)。正在將 IsRead 設為 true...`);
+      mailSheet.getRange(mailIndex + 2, readCol + 1).setValue(true);
+      SpreadsheetApp.flush(); // 強制寫入
+      Utilities.sleep(1000);  // 等待同步
+    } else {
+      Logger.log(`❌ 警告：在 Mailbox 工作表中找不到 MailID 為 "${mailID}" 的郵件。`);
+    }
+    return getUnreadMailCount();
+  } catch (e) {
+    Logger.log(`❌ 在 markMailAsReadAndGetCount 中發生嚴重錯誤: ${e.message}`);
+    return getUnreadMailCount(); // 即使出錯，也回傳當前計數，避免前端崩潰
   }
 }
 
@@ -2716,8 +2778,29 @@ function processAchievement(achievementId, action, rewardJson, rejectionReason, 
   }
 
   if (action === 'approved' && rewardJson && rewardJson.trim() !== '{}' && rewardJson.trim() !== '') {
+    // 讀取玩家資料以檢查狀態，判斷是否需要附加警告
+    const profileSheet = ss.getSheetByName("Profile");
+    const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+    const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
+    const profile = {};
+    profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
+
+    // 計算當前效果
+    const activeStatuses = evaluateStatusRules(profile);
+    const effectsSummary = calculateEffectsSummary(activeStatuses);
+    
+    let mailMessage = `恭喜你完成了成就「${achievementItemName}」！<br><br>這是給你的獎勵，請查收。`;
+
+    // 檢查是否有懲罰，並附加警告訊息
+    if (effectsSummary.globalRewardModifier < 1) {
+      const penaltyPercent = Math.round((1 - effectsSummary.globalRewardModifier) * 100);
+      const penaltyReasonStatus = activeStatuses.find(s => s.GlobalRewardModifier && parseFloat(s.GlobalRewardModifier) < 1);
+      let reasonText = penaltyReasonStatus ? `因為你現在處於「${penaltyReasonStatus.狀態名稱}」狀態` : "因為你目前的狀態不佳";
+      
+      mailMessage += `<br><br><div style="color: #721c24; border: 1px solid #f5c6cb; background-color: #f8d7da; padding: 10px; border-radius: 5px;"><strong>⚠️ 注意：</strong>${reasonText}，所有獎勵將會減少 <strong>${penaltyPercent}%</strong>。要好好照顧自己喔！</div>`;
+    }
+
     const mailTitle = `成就獎勵：${achievementItemName}`;
-    const mailMessage = `恭喜你完成了成就「${achievementItemName}」！\n\n這是給你的獎勵，請查收。`;
     sendAdminMail(mailTitle, mailMessage, rewardJson, 30); // 發送獎勵郵件
     sheet.getRange(rowIndex + 1, headers.indexOf('RewardJSON') + 1).setValue(rewardJson);
     return `✅ 成就已核准，並已發送獎勵郵件！`;
