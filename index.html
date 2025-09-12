@@ -470,6 +470,9 @@ body {
   <div class="bottom-item" onclick="openShop()"> <!-- 尚未實作 -->
     <img src="https://renewmiffy.github.io/mygame/img/icons/shop.webp" alt="商店" width="60">
   </div>
+  <div class="bottom-item" onclick="openAchievementModal()">
+    <img src="https://renewmiffy.github.io/mygame/img/icons/achievement.webp" alt="成就" width="60">
+  </div>
   <div class="bottom-item" onclick="openMailbox()">
     <img src="https://renewmiffy.github.io/mygame/img/icons/mail.webp" alt="信箱" width="60"><span id="mail-badge" class="badge hidden"></span>
   </div>
@@ -598,7 +601,7 @@ body {
   <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
   <div class="adventure-content">
     <h3>📬 我的信箱</h3>
-    <div id="mail-list-container" style="max-height: 400px; overflow-y: auto; padding-right: 10px;">
+    <div id="mail-list-container" style="max-height: 400px; overflow-y: auto; padding: 5px;">
       <!-- JS 會動態產生郵件列表 -->
     </div>
   </div>
@@ -696,6 +699,52 @@ body {
           <div id="shop-list-honor-item" class="secondary-tab-content hidden"></div>
         </div>
       </div>
+  </div>
+</div>
+
+<!-- ✅ 新增：成就 Modal -->
+<div id="achievement-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3>🏆 我的成就</h3>
+    <div class="tabs">
+      <button class="tab-button active" onclick="switchAchievementTab('submit')">提交新成就</button>
+      <button class="tab-button" onclick="switchAchievementTab('history')">回顧已完成</button>
+    </div>
+
+    <!-- 提交成就分頁 -->
+    <div id="achievement-submit-tab" class="tab-content" style="padding-top: 15px;">
+      <div style="margin-bottom: 10px;">
+        <label for="achievement-category" style="font-weight: bold; font-size: 0.9em; margin-bottom: 5px; display: block;">成就類別</label>
+        <select id="achievement-category" style="width: 100%; padding: 10px; box-sizing: border-box;">
+          <option value="">-- 請選擇類別 --</option>
+          <option value="閱讀">📚 閱讀</option>
+          <option value="程式">💻 程式</option>
+          <option value="音樂藝術">🎨 音樂藝術</option>
+          <option value="運動">🏃 運動</option>
+          <option value="家務">🧹 家務</option>
+          <option value="學習">📝 學習</option>
+          <option value="創作">🔧 創作</option>
+          <option value="其他">🌟 其他</option>
+        </select>
+      </div>
+      <input type="text" id="achievement-item-name" placeholder="書名 / 作品名稱" style="width: 100%; padding: 10px; margin-bottom: 10px; box-sizing: border-box;">
+      <textarea id="achievement-desc" rows="4" placeholder="簡單心得或作品說明..." style="width: 100%; padding: 10px; margin-bottom: 15px; box-sizing: border-box;"></textarea>
+      <button onclick="submitAchievement()" class="approve-btn" style="width: 100%;">提交審核</button>
+    </div>
+
+    <!-- 歷史成就分頁 -->
+    <div id="achievement-history-tab" class="tab-content hidden">
+        <div class="tabs secondary-tabs" style="margin-bottom: 10px;">
+            <button class="tab-button active" onclick="switchAchievementHistoryTab('milestone')">🌟 里程碑</button>
+            <button class="tab-button" onclick="switchAchievementHistoryTab('recent')">🕒 近期成果</button>
+        </div>
+        <div style="max-height: 300px; overflow-y: auto; padding: 5px;">
+            <div id="achievement-history-milestone" class="secondary-tab-content"></div>
+            <div id="achievement-history-recent" class="secondary-tab-content hidden"></div>
+        </div>
+    </div>
+
   </div>
 </div>
 
@@ -2224,6 +2273,122 @@ function claimMail(mailId) {
   }).withFailureHandler(err => {
     showToast(`❌ 領取失敗：${err.message}`);
   }).claimMailReward(mailId);
+}
+</script>
+
+<!-- ✅ 新增：成就系統相關腳本 -->
+<script>
+function openAchievementModal() {
+  document.getElementById('achievement-modal').classList.remove('hidden');
+  // 預設顯示提交分頁
+  switchAchievementTab('submit');
+}
+
+function switchAchievementTab(tab) {
+  const submitTab = document.getElementById('achievement-submit-tab');
+  const historyTab = document.getElementById('achievement-history-tab');
+  const buttons = document.querySelectorAll('#achievement-modal .tab-button');
+
+  if (tab === 'submit') {
+    submitTab.classList.remove('hidden');
+    historyTab.classList.add('hidden');
+    buttons[0].classList.add('active');
+    buttons[1].classList.remove('active');
+  } else { // history
+    submitTab.classList.add('hidden');
+    historyTab.classList.remove('hidden');
+    buttons[0].classList.remove('active');
+    buttons[1].classList.add('active');
+    // 載入歷史紀錄
+    // ✅【修正】不要覆蓋整個 tab，而是將載入提示放在目標容器內
+    const milestoneContainer = document.getElementById('achievement-history-milestone');
+    const recentContainer = document.getElementById('achievement-history-recent');
+    if (milestoneContainer) milestoneContainer.innerHTML = '<div>正在載入歷史成就...</div>';
+    if (recentContainer) recentContainer.innerHTML = ''; // 清空另一個分頁
+
+    google.script.run
+      .withSuccessHandler(renderAchievementHistory)
+      .withFailureHandler(err => { 
+        if (milestoneContainer) milestoneContainer.innerHTML = `<div>無法載入：${err.message}</div>`; 
+      })
+      .getCompletedAchievements();
+  }
+}
+
+function submitAchievement() {
+  const category = document.getElementById('achievement-category').value;
+  const itemName = document.getElementById('achievement-item-name').value;
+  const description = document.getElementById('achievement-desc').value;
+
+  if (!category || !itemName || !description) {
+    showToast("⚠️ 請填寫所有欄位！");
+    return;
+  }
+
+  showToast("⏳ 正在提交...", 2000);
+  google.script.run
+    .withSuccessHandler(msg => {
+      showToast(msg);
+      document.getElementById('achievement-category').value = '';
+      document.getElementById('achievement-item-name').value = '';
+      document.getElementById('achievement-desc').value = '';
+      closeModal(document.getElementById('achievement-modal').querySelector('button'));
+    })
+    .withFailureHandler(err => {
+      showToast(`❌ 提交失敗：${err.message}`);
+    })
+    .submitAchievement(category, itemName, description);
+}
+
+function switchAchievementHistoryTab(tab) {
+    document.getElementById('achievement-history-milestone').classList.toggle('hidden', tab !== 'milestone');
+    document.getElementById('achievement-history-recent').classList.toggle('hidden', tab !== 'recent');
+    document.querySelectorAll('#achievement-history-tab .secondary-tabs .tab-button').forEach(btn => {
+        const isMilestoneBtn = btn.textContent.includes('里程碑');
+        btn.classList.toggle('active', (tab === 'milestone' && isMilestoneBtn) || (tab === 'recent' && !isMilestoneBtn));
+    });
+}
+
+function renderAchievementHistory(data) {
+  const { milestones, recents } = data;
+  const milestoneContainer = document.getElementById('achievement-history-milestone');
+  const recentContainer = document.getElementById('achievement-history-recent');
+
+  const renderList = (achievements) => {
+    if (!achievements || achievements.length === 0) {
+      return '<div style="text-align:center; padding: 20px; color: #888;">此分類沒有已完成的成就。</div>';
+    }
+
+    let html = '';
+    achievements.forEach(ach => {
+      const approvalDate = ach.ApprovalDate ? new Date(ach.ApprovalDate).toLocaleDateString() : '未知日期';
+      
+      html += `
+        <div class="bag-item-container" style="background:#f9f9f9;">
+          <div class="bag-item-header" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleItemDetail(this)">
+              <strong>🏆 [${ach.Category}] ${ach.ItemName}</strong>
+              <span style="font-size: 14px; color: #888;">${approvalDate}</span>
+          </div>
+          <div class="bag-item-detail hidden" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; font-size: 14px;">
+              <p style="margin: 0 0 10px 0; white-space: pre-wrap;">${ach.Description}</p>
+          </div>
+        </div>
+      `;
+    });
+    return html;
+  };
+
+  milestoneContainer.innerHTML = renderList(milestones);
+  recentContainer.innerHTML = renderList(recents);
+
+  // 預設顯示里程碑
+  switchAchievementHistoryTab('milestone');
+
+  // 如果里程碑是空的，但近期成果有東西，則自動切換到近期成果
+  if ((!milestones || milestones.length === 0) && (recents && recents.length > 0)) {
+    switchAchievementHistoryTab('recent');
+    return;
+  }
 }
 </script>
 

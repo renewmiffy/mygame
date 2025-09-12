@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <!-- prettier-ignore -->
     <base target="_top">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
@@ -12,7 +13,7 @@
       .item { background: #fff; border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
       .item-details { flex-grow: 1; }
       .item-details strong { font-size: 1.1em; color: #333; }
-      .item-details span { font-size: 0.9em; color: #666; display: block; margin-top: 4px; }
+      .item-details span { font-size: 0.9em; color: #666; display: block; margin-top: 4px; } 
       .verify-btn { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.9em; font-weight: bold; background-color: #007bff; color: white; text-decoration: none; text-align: center; }
       
       /* 新增的表單樣式 */
@@ -51,6 +52,20 @@
       #add-item-btn { background-color: #17a2b8; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-weight: bold; }
       .added-item { display: flex; justify-content: space-between; align-items: center; background: #e9ecef; padding: 5px 10px; border-radius: 4px; margin-bottom: 5px; font-size: 0.9em; }
       .remove-item-btn { background: #6c757d; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-weight: bold; line-height: 22px; text-align: center; }
+    </style>
+    <!-- ✅ 新增：Modal 樣式 -->
+    <style>
+      .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 100; display: none; align-items: center; justify-content: center; }
+      .modal-content { background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; position: relative; }
+      .modal-close-btn { position: absolute; top: 10px; right: 15px; font-size: 1.5em; cursor: pointer; border: none; background: none; }
+      .modal-actions { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
+      .modal-actions button { padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; font-weight: bold; }
+      .modal-approve-btn { background-color: #28a745; color: white; }
+      .modal-reject-btn { background-color: #dc3545; color: white; }
+      .modal-details { border-left: 4px solid #ccc; padding-left: 15px; margin: 20px 0; }
+      .modal-details p { margin: 8px 0; }
+      .modal-description { background: #f8f9fa; padding: 15px; border-radius: 5px; white-space: pre-wrap; font-size: 0.9em; max-height: 200px; overflow-y: auto; }
+      .modal-message { margin-top: 20px; font-weight: bold; padding: 10px; border-radius: 5px; text-align: center; }
     </style>
   </head>
   <body>
@@ -106,6 +121,74 @@
       <div id="loading">正在載入...</div>
       <ul id="pending-list" class="item-list"></ul>
       <div id="message"></div>
+    </div>
+
+    <!-- ✅ 新增：待審核成就區塊 -->
+    <div class="container">
+      <h1>🏆 待審核的成就</h1>
+      <div id="achievement-loading">正在載入...</div>
+      <ul id="achievement-list" class="item-list"></ul>
+    </div>
+
+    <!-- ✅ 新增：兌換核銷 Modal -->
+    <div id="verification-modal" class="modal-overlay">
+      <div class="modal-content">
+        <button class="modal-close-btn" onclick="closeAllModals()">×</button>
+        <h1>🎁 兌換核銷</h1>
+        <div id="verification-modal-body">
+          <!-- JS 會載入內容 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ✅ 新增：成就審核 Modal -->
+    <div id="achievement-review-modal" class="modal-overlay">
+      <div class="modal-content">
+        <button class="modal-close-btn" onclick="closeAllModals()">×</button>
+        <h1>🏆 成就審核</h1>
+        <div id="achievement-review-modal-body">
+          <!-- JS 會載入內容 -->
+        </div>
+        <!-- 獎勵編輯器 (從 achievement_review.html 搬過來) -->
+        <div id="achievement-reward-section">
+          <div class="form-group">
+            <label>審核獎勵 (核准時發送，可留空)</label>
+            <fieldset class="reward-builder">
+              <legend>貨幣</legend>
+              <div class="reward-row"><label for="ach-reward-coins">💰 金幣</label><input type="number" id="ach-reward-coins" min="0" placeholder="數量"></div>
+              <div class="reward-row"><label for="ach-reward-honor">⭐ 榮譽點數</label><input type="number" id="ach-reward-honor" min="0" placeholder="數量"></div>
+            </fieldset>
+            <fieldset class="reward-builder">
+              <legend>道具</legend>
+              <div id="ach-reward-items-list"></div>
+              <div class="add-item-row">
+                <select id="ach-item-selector"><option value="">載入中...</option></select>
+                <input type="number" id="ach-item-quantity" min="1" value="1" placeholder="數量">
+                <button type="button" id="ach-add-item-btn">＋ 新增道具</button>
+              </div>
+            </fieldset>
+          </div>
+        </div>
+        <!-- ✅ 新增：是否設為長期成就的選項 -->
+        <div id="achievement-options-section" style="margin-top: 15px; padding: 10px; background-color: #f8f9fa; border-radius: 5px;">
+            <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="ach-is-long-term" style="width: auto; margin-right: 10px;">
+                <span>設為長期成就 (里程碑)，將永久保留於回顧清單中。</span>
+            </label>
+        </div>
+        <div class="modal-actions">
+          <button id="ach-approve-btn" class="modal-approve-btn">✅ 核准並發送獎勵</button>
+          <button id="ach-reject-btn" class="modal-reject-btn">❌ 拒絕</button>
+        </div>
+        <div id="ach-modal-message" class="modal-message" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- ✅ 新增：通用載入中遮罩 -->
+    <div id="loading-overlay" class="modal-overlay">
+      <div style="color:white; font-size: 1.5em; font-weight: bold;">
+        處理中...
+      </div>
     </div>
 
     <script>
@@ -185,6 +268,16 @@
         document.getElementById('reward-items-list').appendChild(itemDiv);
       });
 
+      // ✅ 新增：處理成就審核 modal 的新增道具按鈕
+      document.getElementById('ach-add-item-btn').addEventListener('click', function() {
+        const selector = document.getElementById('ach-item-selector');
+        const itemId = selector.value;
+        if (!itemId) return;
+        const itemName = selector.options[selector.selectedIndex].text;
+        const quantity = parseInt(document.getElementById('ach-item-quantity').value) || 1;
+        addRewardItemToList(itemName, itemId, quantity, 'ach-reward-items-list');
+      });
+
       window.onload = function() {
         // 載入待核銷列表
         google.script.run
@@ -192,13 +285,25 @@
           .withFailureHandler(showError)
           .getPendingRedemptions();
 
+        // ✅ 新增：載入待審核成就列表
+        google.script.run
+          .withSuccessHandler(renderAchievementList)
+          .withFailureHandler(showAchievementError)
+          .getPendingAchievements();
+
         // ✅ 新增：載入獎勵選項 (道具列表)
         google.script.run
           .withSuccessHandler(function(options) {
-            const selector = document.getElementById('item-selector');
-            selector.innerHTML = '<option value="">-- 請選擇道具 --</option>'; // 清空"載入中"
+            const mailSelector = document.getElementById('item-selector');
+            const achSelector = document.getElementById('ach-item-selector');
+            
+            mailSelector.innerHTML = '<option value="">-- 請選擇道具 --</option>';
+            achSelector.innerHTML = '<option value="">-- 請選擇道具 --</option>';
+
             options.items.forEach(item => {
-              selector.innerHTML += `<option value="${item.id}">${item.name}</option>`;
+              const optionHtml = `<option value="${item.id}">${item.name}</option>`;
+              mailSelector.innerHTML += optionHtml;
+              achSelector.innerHTML += optionHtml;
             });
           })
           .getAdminRewardOptions();
@@ -219,8 +324,6 @@
 
         let html = '';
         items.forEach(item => {
-          // ✅ 修正：直接在 href 中組合 URL，並移除有問題的樣板語法
-          const verifyUrl = `<?= ScriptApp.getService().getUrl() ?>?page=verify&token=${item.Token}`;
           html += `
             <li class="item">
               <div class="item-details">
@@ -228,7 +331,7 @@
                 <span>玩家: ${item.PlayerName}</span>
                 <span>請求時間: ${new Date(item.RequestDate).toLocaleString()}</span>
               </div>
-              <a href="${verifyUrl}" target="_blank" class="verify-btn">前往核銷</a>
+              <button class="verify-btn" onclick="openVerificationModal('${item.Token}')">前往核銷</button>
             </li>
           `;
         });
@@ -255,6 +358,221 @@
         const sendBtn = document.querySelector('.send-btn');
         sendBtn.disabled = false;
         sendBtn.textContent = '發送郵件';
+      }
+
+      // ✅ 新增：渲染待審核成就列表
+      function renderAchievementList(items) {
+        const loadingDiv = document.getElementById('achievement-loading');
+        const listUl = document.getElementById('achievement-list');
+        loadingDiv.style.display = 'none';
+
+        if (!items || items.length === 0) {
+          listUl.innerHTML = "<div style='padding: 10px; color: #666;'>目前沒有待審核的成就。</div>";
+          return;
+        }
+
+        let html = '';
+        items.forEach(item => {
+          html += `
+            <li class="item">
+              <div class="item-details">
+                <strong>[${item.Category || '未分類'}] ${item.ItemName || '無名稱'}</strong>
+                <span>玩家: ${item.PlayerName}</span>
+                <span>請求時間: ${new Date(item.SubmissionDate).toLocaleString()}</span>
+              </div>
+              <button class="verify-btn" style="background-color: #17a2b8;" onclick="openAchievementReviewModal('${item.AchievementID}')">前往審核</button>
+            </li>
+          `;
+        });
+        listUl.innerHTML = html;
+      }
+
+      // ✅ 新增：處理成就列表的錯誤
+      function showAchievementError(error) {
+        document.getElementById('achievement-loading').style.display = 'none';
+        document.getElementById('achievement-list').innerHTML = `<div style='padding: 10px; color: #721c24;'>錯誤：${error.message}</div>`;
+      }
+
+      // ✅ 新增：關閉所有 Modal
+      function closeAllModals() {
+        document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+      }
+
+      // ✅ 新增：開啟兌換核銷 Modal
+      function openVerificationModal(token) {
+        const modal = document.getElementById('verification-modal');
+        const body = document.getElementById('verification-modal-body');
+        modal.style.display = 'flex';
+        body.innerHTML = '正在載入兌換詳情...';
+
+        google.script.run
+          .withSuccessHandler(details => {
+            if (!details) {
+              body.innerHTML = `<div class="modal-message" style="background-color: #f8d7da; color: #721c24;">找不到此兌換紀錄，可能已被處理。</div>`;
+              return;
+            }
+            let html = `
+              <div class="modal-details">
+                <p><strong>玩家名稱:</strong> ${details.PlayerName || '未知'}</p>
+                <p><strong>獎勵名稱:</strong> ${details.ItemName || '未知'}</p>
+                <p><strong>請求時間:</strong> ${new Date(details.RequestDate).toLocaleString()}</p>
+                <p><strong>目前狀態:</strong> <span id="verification-status">${details.Status}</span></p>
+              </div>
+              <div id="verification-actions" class="modal-actions">
+                <button class="modal-approve-btn" onclick="processRedemption('${token}', 'approved')">✅ 核准兌換</button>
+                <button class="modal-reject-btn" onclick="processRedemption('${token}', 'rejected')">❌ 拒絕兌換</button>
+              </div>
+              <div id="verification-message" class="modal-message" style="display:none;"></div>
+            `;
+            if (details.Status !== 'Pending') {
+              html = `
+                <div class="modal-details">
+                  <p><strong>玩家名稱:</strong> ${details.PlayerName || '未知'}</p>
+                  <p><strong>獎勵名稱:</strong> ${details.ItemName || '未知'}</p>
+                </div>
+                <div class="modal-message" style="background-color: #f0f0f0; color: #6c757d;">此請求已於 ${new Date(details.ProcessDate).toLocaleString()} 被處理。</div>
+              `;
+            }
+            body.innerHTML = html;
+          })
+          .withFailureHandler(err => {
+            body.innerHTML = `<div class="modal-message" style="background-color: #f8d7da; color: #721c24;">錯誤：${err.message}</div>`;
+          })
+          .getRedemptionDetails(token);
+      }
+
+      // ✅ 新增：處理兌換
+      function processRedemption(token, action) {
+        document.getElementById('loading-overlay').style.display = 'flex';
+        google.script.run
+          .withSuccessHandler(msg => {
+            document.getElementById('loading-overlay').style.display = 'none';
+            const msgDiv = document.getElementById('verification-message');
+            msgDiv.textContent = msg;
+            msgDiv.style.display = 'block';
+            msgDiv.style.backgroundColor = '#d4edda';
+            msgDiv.style.color = '#155724';
+            document.getElementById('verification-actions').style.display = 'none';
+            document.getElementById('verification-status').textContent = (action === 'approved' ? 'Approved' : 'Rejected');
+            // 刷新列表
+            google.script.run.withSuccessHandler(renderList).getPendingRedemptions();
+          })
+          .withFailureHandler(err => {
+            document.getElementById('loading-overlay').style.display = 'none';
+            alert('處理失敗：' + err.message);
+          })
+          .processRedemption(token, action);
+      }
+
+      // ✅ 新增：開啟成就審核 Modal
+      function openAchievementReviewModal(achievementId) {
+        const modal = document.getElementById('achievement-review-modal');
+        const body = document.getElementById('achievement-review-modal-body');
+        modal.style.display = 'flex';
+        body.innerHTML = '正在載入成就詳情...';
+
+        // 清空上次的獎勵
+        document.getElementById('ach-reward-coins').value = '';
+        document.getElementById('ach-reward-honor').value = '';
+        document.getElementById('ach-is-long-term').checked = false;
+        document.getElementById('ach-reward-items-list').innerHTML = '';
+        document.getElementById('ach-modal-message').style.display = 'none';
+        document.querySelector('#achievement-review-modal .modal-actions').style.display = 'flex';
+
+        google.script.run
+          .withSuccessHandler(details => {
+            if (!details) {
+              body.innerHTML = `<div class="modal-message" style="background-color: #f8d7da; color: #721c24;">找不到此成就紀錄，可能已被處理。</div>`;
+              return;
+            }
+            let html = `
+              <div class="modal-details">
+                <p><strong>玩家:</strong> ${details.PlayerName || '未知'}</p>
+                <p><strong>類別/名稱:</strong> [${details.Category || '未分類'}] ${details.ItemName || '無名稱'}</p>
+                <p><strong>提交時間:</strong> ${new Date(details.SubmissionDate).toLocaleString()}</p>
+                <p><strong>目前狀態:</strong> <span id="achievement-status">${details.Status}</span></p>
+                <p><strong>說明:</strong></p>
+                <div class="modal-description">${details.Description || '無說明'}</div>
+              </div>
+            `;
+            body.innerHTML = html;
+
+            document.getElementById('ach-approve-btn').onclick = () => processAchievement(achievementId, 'approved');
+            document.getElementById('ach-reject-btn').onclick = () => processAchievement(achievementId, 'rejected');
+
+            if (details.Status !== 'Pending') {
+              document.querySelector('#achievement-review-modal .modal-actions').style.display = 'none';
+              document.getElementById('achievement-reward-section').style.display = 'none';
+              document.getElementById('achievement-options-section').style.display = 'none';
+            } else {
+              document.getElementById('achievement-reward-section').style.display = 'block';
+              document.getElementById('achievement-options-section').style.display = 'block';
+            }
+          })
+          .withFailureHandler(err => {
+            body.innerHTML = `<div class="modal-message" style="background-color: #f8d7da; color: #721c24;">錯誤：${err.message}</div>`;
+          })
+          .getAchievementDetails(achievementId);
+      }
+
+      // ✅ 新增：處理成就審核
+      function processAchievement(achievementId, action) {
+        document.getElementById('loading-overlay').style.display = 'flex';
+        let rejectionReason = "";
+
+        if (action === 'rejected') {
+          rejectionReason = prompt("請輸入拒絕此成就的理由（此理由將會透過郵件發送給玩家）：", "");
+          if (rejectionReason === null) { // 使用者按下取消
+            document.getElementById('loading-overlay').style.display = 'none';
+            return; // 中斷操作
+          }
+        }
+
+        // ✅ 新增：讀取是否為長期成就的選項
+        const isLongTerm = document.getElementById('ach-is-long-term').checked;
+
+        const rewardObject = {};
+        const coins = parseInt(document.getElementById('ach-reward-coins').value);
+        if (coins > 0) rewardObject.Coins = coins;
+        const honor = parseInt(document.getElementById('ach-reward-honor').value);
+        if (honor > 0) rewardObject.HonorPoints = honor;
+        const items = [];
+        document.querySelectorAll('#ach-reward-items-list .added-item').forEach(itemDiv => {
+          items.push({ ItemID: itemDiv.dataset.itemId, Quantity: parseInt(itemDiv.dataset.quantity) });
+        });
+        if (items.length > 0) rewardObject.Items = items;
+        const rewardJson = Object.keys(rewardObject).length > 0 ? JSON.stringify(rewardObject) : "";
+
+        google.script.run
+          .withSuccessHandler(msg => {
+            document.getElementById('loading-overlay').style.display = 'none';
+            const msgDiv = document.getElementById('ach-modal-message');
+            msgDiv.textContent = msg;
+            msgDiv.style.display = 'block';
+            msgDiv.style.backgroundColor = '#d4edda';
+            msgDiv.style.color = '#155724';
+            document.querySelector('#achievement-review-modal .modal-actions').style.display = 'none';
+            document.getElementById('achievement-status').textContent = (action === 'approved' ? 'Approved' : 'Rejected');
+            google.script.run.withSuccessHandler(renderAchievementList).getPendingAchievements();
+          })
+          .withFailureHandler(err => {
+            document.getElementById('loading-overlay').style.display = 'none';
+            alert('處理失敗：' + err.message);
+          })
+          .processAchievement(achievementId, action, rewardJson, rejectionReason, isLongTerm);
+      }
+
+      // ✅ 新增：輔助函式，將道具加入列表
+      function addRewardItemToList(itemName, itemId, quantity, listId) {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'added-item';
+        itemDiv.dataset.itemId = itemId;
+        itemDiv.dataset.quantity = quantity;
+        itemDiv.innerHTML = `
+          <span>${itemName} x ${quantity}</span>
+          <button type="button" class="remove-item-btn" onclick="this.parentElement.remove()">×</button>
+        `;
+        document.getElementById(listId).appendChild(itemDiv);
       }
     </script>
   </body>

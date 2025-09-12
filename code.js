@@ -2,14 +2,7 @@ const SPREADSHEET_ID = '1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs';
 
 // ✅ 日期欄位一定要判斷是否為 Date 並轉為 "yyyy/MM/dd" 格式再進行比較
 // 否則會導致 == 比對失敗、條件永遠不成立 顯示用途也要處理日期格式，避免出現 GMT/UTC 雜訊。
-function doGet(e) {
-  // ✅ 新增路由功能，區分遊戲主頁和核銷頁面
-  if (e.parameter.page === 'verify' && e.parameter.token) {
-    const template = HtmlService.createTemplateFromFile('verification');
-    template.token = e.parameter.token; // 將 token 傳給 HTML 樣板
-    return template.evaluate().setTitle('遊戲獎勵核銷').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  }
-
+function doGet(e) { 
   // ✅ 新增：提供一個頁面來查看所有待核銷的項目
   if (e.parameter.page === 'admin') {
     // ✅ 修正：admin.html 不需要樣板語法，直接輸出即可
@@ -900,6 +893,18 @@ function getFieldMapping() {
   return map;
 }
 function useItem(itemID, quantity) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const profileSheet = ss.getSheetByName("Profile");
+  const inventorySheet = ss.getSheetByName("Inventory");
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  const logSheet = ss.getSheetByName("PlayerLog");
+
+  // ✅【關鍵修正】將這段被誤刪的程式碼加回來，以正確讀取玩家資料
+  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
+  const profile = {};
+  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
+
   // ✅ 輔助函式：執行單次兩階段抽獎
   function _performSinglePull(lootTable, allItemData, allItemHeaders) {
       const totalWeight = lootTable.reduce((sum, item) => sum + (item.Weight || 0), 0);
@@ -933,46 +938,35 @@ function useItem(itemID, quantity) {
       }
   }
 
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const profileSheet = ss.getSheetByName("Profile");
-  const inventorySheet = ss.getSheetByName("Inventory");
-  const itemSheet = ss.getSheetByName("ItemMaster");
-  const logSheet = ss.getSheetByName("PlayerLog");
-
-  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-  const profile = {};
-  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
-
   const invData = inventorySheet.getDataRange().getValues();
   const invHeaders = invData[0];
   const invRows = invData.slice(1);
   const invIndex = invRows.findIndex(row => row[invHeaders.indexOf("ItemID")] === itemID);
   if (invIndex === -1) throw new Error("❌ 背包中找不到此道具");
-
+  
   quantity = parseInt(quantity) || 1;
   if (quantity <= 0) throw new Error("⚠️ 使用數量必須大於 0");
-
+  
   const countIdx = invHeaders.indexOf("Count");
   const count = parseInt(invRows[invIndex][countIdx]);
   if (count < quantity) throw new Error(`⚠️ 數量不足，需要 ${quantity} 個，但你只有 ${count} 個。`);
-
+  
   const itemData = itemSheet.getDataRange().getValues();
   const itemHeaders = itemData[0];
   const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
   if (!itemRow) throw new Error("❌ 找不到道具主資料 (ItemMaster)");
-
+  
   const itemMaster = {};
   itemHeaders.forEach((k, i) => itemMaster[k] = itemRow[i]);
   const itemName = itemMaster.ItemName || itemID;
   const itemType = itemMaster.ItemType || 'Consumable'; // 預設為消耗品
-
+  
   // 對於一次性使用的道具，強制數量為 1
   const singleUseTypes = ['TreasureChest', 'Redeemable'];
   if (singleUseTypes.includes(itemType) && quantity > 1) {
     quantity = 1; // 強制使用 1 個
   }
-
+  
   // ----------------------------------------------------------------
   // 1. 處理寶箱 (TreasureChest)
   // ----------------------------------------------------------------
@@ -987,10 +981,10 @@ function useItem(itemID, quantity) {
     } catch (e) {
       throw new Error(`❌ 無法解析寶箱 [${itemName}] 的獎池設定 (LootTableJSON): ${e.message}`);
     }
-
+    
     // ✅ 使用重構後的輔助函式執行單抽
     const pullResult = _performSinglePull(lootTable, itemData, itemHeaders);
-
+    
     // ✅ 修正：將消耗寶箱的邏輯移到最前面，確保一定會執行
     // 消耗寶箱
     if (count - quantity <= 0) {
@@ -998,7 +992,7 @@ function useItem(itemID, quantity) {
     } else {
       inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity);
     }
-
+    
     // --- 發放獎勵 ---
     let resultMessage = "";
     if (pullResult.type === 'currency') {
@@ -1014,7 +1008,7 @@ function useItem(itemID, quantity) {
       const itemIDCol = invHeaders.indexOf("ItemID");
       const countCol = invHeaders.indexOf("Count");
       const existingItemIndex = invRows.findIndex(r => r[itemIDCol] === pullResult.itemID);
-
+      
       if (existingItemIndex !== -1) {
         const sheetRowIndex = existingItemIndex + 2;
         const currentCount = parseInt(invRows[existingItemIndex][countCol]) || 0;
@@ -1025,7 +1019,7 @@ function useItem(itemID, quantity) {
       }
       resultMessage = `恭喜！你從 ${itemName} 中獲得了【${pullResult.rarity}★】${pullResult.itemName}！`;
     }
-
+    
     // 寫入日誌
     const logHeaders = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
     const logEntry = {
@@ -1052,7 +1046,7 @@ function useItem(itemID, quantity) {
     const effectJson = itemMaster.Effect || '{}';
     const itemsGranted = [];
     const itemsToAdd = {};
-
+    
     try {
       const effects = JSON.parse(effectJson);
       if (effects.Items && Array.isArray(effects.Items)) {
@@ -1067,23 +1061,23 @@ function useItem(itemID, quantity) {
     } catch (e) {
       throw new Error(`❌ 無法解析禮包 [${itemName}] 的效果設定 (Effect): ${e.message}`);
     }
-
+    
     if (Object.keys(itemsToAdd).length === 0) {
       throw new Error(`❌ 禮包 [${itemName}] 的內容為空。`);
     }
-
+    
     // --- 批次發放道具 (此處假設禮包內道具皆可堆疊) ---
     const invData = inventorySheet.getDataRange().getValues();
     const invHeaders = invData[0];
     const invRows = invData.slice(1);
     const itemIDCol = invHeaders.indexOf("ItemID");
     const countCol = invHeaders.indexOf("Count");
-
+    
     const inventoryMap = {};
     invRows.forEach((row, index) => {
       inventoryMap[row[itemIDCol]] = { count: parseInt(row[countCol]) || 0, sheetRow: index + 2 };
     });
-
+    
     const rowsToAppend = [];
     Object.entries(itemsToAdd).forEach(([id, qty]) => {
       if (inventoryMap[id]) {
@@ -1094,11 +1088,11 @@ function useItem(itemID, quantity) {
       const grantedItemName = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === id)?.[itemHeaders.indexOf("ItemName")] || id;
       itemsGranted.push(`${grantedItemName} x${qty}`);
     });
-
+    
     if (rowsToAppend.length > 0) {
       inventorySheet.getRange(inventorySheet.getLastRow() + 1, 1, rowsToAppend.length, invHeaders.length).setValues(rowsToAppend);
     }
-
+    
     // 消耗禮包
     if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
     else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
@@ -1124,19 +1118,19 @@ function useItem(itemID, quantity) {
     } catch (e) {
       throw new Error(`❌ 無法解析 Buff 道具 [${itemName}] 的效果設定 (Effect): ${e.message}`);
     }
-
+    
     // ✅ 修正：如果工作表不存在，就自動建立它
     let buffSheet = ss.getSheetByName('ActiveBuffs');
     if (!buffSheet) {
       buffSheet = ss.insertSheet('ActiveBuffs');
       buffSheet.appendRow(['BuffID', 'BuffName', 'EffectJSON', 'ExpiryDate', 'AppliedDate']);
     }
-
+    
     const now = new Date();
     const expiryDate = new Date(now.getTime() + buffInfo.duration_hours * 60 * 60 * 1000);
-
+    
     buffSheet.appendRow([Utilities.getUuid(), itemName, JSON.stringify(buffInfo.effects), expiryDate, now]);
-
+    
     // 消耗道具
     if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); }
     else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
@@ -1154,7 +1148,7 @@ function useItem(itemID, quantity) {
     const effectJson = itemMaster.Effect || '{}';
     let effectApplied = false;
     const rewardsMessage = [];
-
+    
     try {
       const effects = JSON.parse(effectJson);
       Object.entries(effects).forEach(([field, value]) => {
@@ -1167,9 +1161,9 @@ function useItem(itemID, quantity) {
     } catch (e) {
       throw new Error(`❌ 無法解析貨幣包 [${itemName}] 的效果設定 (Effect): ${e.message}`);
     }
-
+    
     if (!effectApplied) { throw new Error(`❌ 貨幣包 [${itemName}] 的效果設定無效。`); }
-
+    
     if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
     else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
     
@@ -1189,23 +1183,18 @@ function useItem(itemID, quantity) {
     if (redemptionSheet.getLastRow() === 0) {
       redemptionSheet.appendRow(['Token', 'ItemID', 'ItemName', 'Status', 'RequestDate', 'ProcessDate', 'PlayerName']);
     }
-    redemptionSheet.appendRow([token, itemID, itemName, 'Pending', new Date(), '', profile.PlayerName]);
-
-    const adminUrl = ScriptApp.getService().getUrl() + '?page=admin';
-    const url = ScriptApp.getService().getUrl() + '?page=verify&token=' + token;
+    redemptionSheet.appendRow([token, itemID, itemName, 'Pending', new Date(), '', profile.PlayerName]); 
+    const adminUrl = ScriptApp.getService().getUrl() + '?page=admin'; 
     const subject = `[遊戲獎勵兌換] ${profile.PlayerName} 請求兌換：${itemName}`;
     const body = `
       <h3>您好！</h3>
       <p>玩家 <strong>${profile.PlayerName}</strong> 在遊戲中請求兌換以下實體獎勵：</p>
       <p style="font-size: 18px; font-weight: bold;">獎勵名稱： ${itemName}</p>
-      <p>請點擊以下連結，單獨處理此項兌換：</p>
-      <p><a href="${url}" style="font-size: 16px; padding: 10px 15px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">處理「${itemName}」</a></p>
-      <hr style="margin: 20px 0;">
-      <p style="font-size: 14px;">或者，您可以點擊下方連結，一次查看所有待處理的項目：</p>
-      <p><a href="${adminUrl}" style="font-size: 16px; padding: 8px 12px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">查看所有待核銷列表</a></p>
+      <p>請點擊以下連結，前往管理後台查看所有待處理的項目：</p>
+      <p><a href="${adminUrl}" style="font-size: 16px; padding: 10px 15px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">前往管理後台</a></p>
     `;
     MailApp.sendEmail({ to: 'renewmiffy@gmail.com', subject: subject, htmlBody: body });
-
+    
   } 
   // ----------------------------------------------------------------
   // 3. 處理一般消耗品 (Consumable)
@@ -1238,7 +1227,7 @@ function useItem(itemID, quantity) {
   } else {
     inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity);
   }
-
+  
   if (itemType === 'Redeemable') {
     // ✅【修正】直接寫入單筆日誌，而不是呼叫會清空屬性的 writeProfile({}, ...)
     const logHeaders = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
@@ -2531,4 +2520,282 @@ function getAdminRewardOptions() {
   return {
     items: items
   };
+}
+
+/**
+ * [成就系統] 玩家提交一項新成就以供審核。
+ * @param {string} category - 成就類別。
+ * @param {string} itemName - 書名或作品名稱。
+ * @param {string} description - 成就的詳細說明。
+ * @returns {string} 執行結果訊息。
+ */
+function submitAchievement(category, itemName, description) {
+  if (!category || !itemName || !description) {
+    throw new Error("❌ 類別、名稱和說明為必填項目。");
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let achievementSheet = ss.getSheetByName('AchievementLog');
+  if (!achievementSheet) {
+    achievementSheet = ss.insertSheet('AchievementLog');
+    // ✅ 修正：建立新的標頭，加入 IsLongTerm
+    achievementSheet.appendRow(['AchievementID', 'PlayerName', 'Category', 'ItemName', 'Description', 'SubmissionDate', 'Status', 'ApprovalDate', 'RewardJSON', 'RejectionReason', 'IsLongTerm']);
+  }
+
+  const profileSheet = ss.getSheetByName('Profile');
+  // ✅【修正】從寫死的 'B2' 改為動態尋找 'PlayerName' 欄位，避免欄位順序變動時出錯。
+  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+  const playerNameColIndex = profileHeaders.indexOf('PlayerName');
+  
+  if (playerNameColIndex === -1) {
+    // 如果找不到 PlayerName 欄位，提供一個明確的錯誤訊息
+    throw new Error("❌ 在 'Profile' 工作表中找不到 'PlayerName' 欄位標頭。請檢查欄位名稱是否正確。");
+  }
+  // 從第二列的對應欄位中取得玩家名稱
+  const playerName = profileSheet.getRange(2, playerNameColIndex + 1).getValue();
+
+  const achievementID = Utilities.getUuid();
+  const submissionDate = new Date();
+
+  achievementSheet.appendRow([achievementID, playerName, category, itemName, description, submissionDate, 'Pending', '', '', '', false]);
+  SpreadsheetApp.flush(); // ✅ 關鍵修正：強制將所有待處理的試算表操作完成。
+  Utilities.sleep(1500);  // ✅ 終極手段：強制等待 1.5 秒，確保資料已在 Google 伺服器間同步。
+
+  // 發送通知郵件給管理者
+  const adminUrl = ScriptApp.getService().getUrl() + `?page=admin`;
+  const subject = `[遊戲成就提報] ${playerName} 提交新成就：[${category}] ${itemName}`;
+  const body = `
+    <h3>您好！</h3>
+    <p>玩家 <strong>${playerName}</strong> 提交了一項新完成的成就：</p>
+    <p><strong>類別：</strong> ${category}</p>
+    <p style="font-size: 18px; font-weight: bold;">名稱/作品： ${itemName}</p>
+    <p><strong>說明：</strong></p>
+    <p style="padding: 10px; background-color: #f4f4f4; border-radius: 5px; white-space: pre-wrap;">${description}</p> 
+    <p>請點擊以下連結，前往管理後台審核此項成就並決定是否發放獎勵：</p>
+    <p><a href="${adminUrl}" style="font-size: 16px; padding: 10px 15px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">前往管理後台</a></p>
+  `;
+  MailApp.sendEmail({ to: 'renewmiffy@gmail.com', subject: subject, htmlBody: body }); // 請記得換成您的 Email
+
+  return "✅ 成就已成功提交審核！";
+}
+
+/**
+ * [管理後台用] 取得所有待審核的成就。
+ * @returns {Array<object>} 待審核的成就物件陣列。
+ */
+function getPendingAchievements() {
+  try {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('AchievementLog');
+    if (!sheet) {
+      Logger.log('[getPendingAchievements] 錯誤：找不到名為 "AchievementLog" 的工作表。');
+      return [];
+    }
+    if (sheet.getLastRow() < 2) {
+      Logger.log('[getPendingAchievements] "AchievementLog" 工作表是空的或只有標頭。');
+      return [];
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim()); // ✅【強化】標頭也清理空格
+    const statusCol = headers.indexOf('Status');
+
+    if (statusCol === -1) {
+      Logger.log(`[getPendingAchievements] 錯誤：在 "AchievementLog" 中找不到 "Status" 欄位標頭。找到的標頭是: [${headers.join(', ')}]`);
+      return [];
+    }
+
+    const pendingItems = data.slice(1).filter(row => {
+      // ✅【強化】比對時，將儲存格內容轉為字串、清理前後空格、並忽略大小寫
+      const statusValue = String(row[statusCol] || '').trim();
+      return statusValue.toLowerCase() === 'pending';
+    }).map(row => {
+      const item = {};
+      headers.forEach((h, i) => {
+        if ((h === 'SubmissionDate' || h === 'ApprovalDate') && row[i] instanceof Date) {
+          item[h] = row[i].toISOString();
+        } else {
+          item[h] = row[i];
+        }
+      });
+      return item;
+    });
+
+    Logger.log(`[getPendingAchievements] 查詢完畢。共找到 ${pendingItems.length} 筆待審核的成就。`);
+    return pendingItems;
+  } catch (e) {
+    Logger.log(`[getPendingAchievements] 執行時發生嚴重錯誤: ${e.message}`);
+    return []; // 發生任何錯誤都回傳空陣列，避免前端報錯
+  }
+}
+
+/**
+ * [成就審核頁面用] 根據 ID 取得成就詳情。
+ * @param {string} achievementId - 成就 ID。
+ * @returns {object|null} 成就物件或 null。
+ */
+function getAchievementDetails(achievementId) {
+  if (!achievementId) return null;
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('AchievementLog');
+  if (!sheet) return null;
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('AchievementID');
+
+  const row = data.find(r => r[idCol] === achievementId);
+  if (!row) return null;
+
+  const details = {};
+  headers.forEach((h, i) => {
+    if ((h === 'SubmissionDate' || h === 'ApprovalDate') && row[i] instanceof Date) {
+      details[h] = row[i].toISOString();
+    } else {
+      details[h] = row[i];
+    }
+  });
+  return details;
+}
+
+/**
+ * [成就審核頁面用] 處理核准或拒絕。
+ * @param {string} achievementId - 成就 ID。
+ * @param {string} action - 'approved' 或 'rejected'。
+ * @param {string} rewardJson - 獎勵的 JSON 字串。
+ * @param {string} rejectionReason - 拒絕理由。
+ * @param {boolean} isLongTerm - 是否設為長期成就。
+ * @returns {string} 結果訊息。
+ */
+function processAchievement(achievementId, action, rewardJson, rejectionReason, isLongTerm) {
+  if (!achievementId) throw new Error("❌ 無效的成就 ID。");
+  if (action !== 'approved' && action !== 'rejected') throw new Error("❌ 無效的操作。");
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('AchievementLog');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('AchievementID');
+  const statusCol = headers.indexOf('Status');
+
+  const rowIndex = data.findIndex(r => r[idCol] === achievementId);
+  if (rowIndex === -1) throw new Error("❌ 找不到此成就紀錄。");
+  if (data[rowIndex][statusCol] !== 'Pending') throw new Error("⚠️ 此請求已被處理，請勿重複操作。");
+
+  const newStatus = action === 'approved' ? 'Approved' : 'Rejected';
+  sheet.getRange(rowIndex + 1, statusCol + 1).setValue(newStatus);
+  sheet.getRange(rowIndex + 1, headers.indexOf('ApprovalDate') + 1).setValue(new Date());
+  const achievementItemName = data[rowIndex][headers.indexOf('ItemName')];
+
+  // ✅ 新增：記錄是否為長期成就
+  if (action === 'approved') {
+    const isLongTermCol = headers.indexOf('IsLongTerm');
+    if (isLongTermCol !== -1) {
+      sheet.getRange(rowIndex + 1, isLongTermCol + 1).setValue(isLongTerm === true);
+    }
+    // ✅【新功能】如果設為里程碑，則將其複製到專用的 MilestoneLog 工作表
+    if (isLongTerm === true) {
+      try {
+        let milestoneSheet = ss.getSheetByName('MilestoneLog');
+        if (!milestoneSheet) {
+          milestoneSheet = ss.insertSheet('MilestoneLog');
+          // 只複製前端顯示需要的欄位
+          milestoneSheet.appendRow(['AchievementID', 'PlayerName', 'Category', 'ItemName', 'Description', 'ApprovalDate', 'RewardJSON']);
+        }
+        const achievementData = data[rowIndex];
+        const newMilestoneRow = [
+          achievementData[headers.indexOf('AchievementID')],
+          achievementData[headers.indexOf('PlayerName')],
+          achievementData[headers.indexOf('Category')],
+          achievementItemName, // ItemName
+          achievementData[headers.indexOf('Description')],
+          new Date(), // ApprovalDate
+          rewardJson // RewardJSON
+        ];
+        milestoneSheet.appendRow(newMilestoneRow);
+      } catch (e) { Logger.log(`將里程碑寫入 MilestoneLog 時出錯: ${e.message}`); }
+    }
+  }
+
+  if (action === 'approved' && rewardJson && rewardJson.trim() !== '{}' && rewardJson.trim() !== '') {
+    const mailTitle = `成就獎勵：${achievementItemName}`;
+    const mailMessage = `恭喜你完成了成就「${achievementItemName}」！\n\n這是給你的獎勵，請查收。`;
+    sendAdminMail(mailTitle, mailMessage, rewardJson, 30); // 發送獎勵郵件
+    sheet.getRange(rowIndex + 1, headers.indexOf('RewardJSON') + 1).setValue(rewardJson);
+    return `✅ 成就已核准，並已發送獎勵郵件！`;
+  }
+
+  // ✅ 新增：如果拒絕，發送通知郵件
+  if (action === 'rejected' && rejectionReason) {
+    const reasonCol = headers.indexOf('RejectionReason');
+    if (reasonCol !== -1) {
+      sheet.getRange(rowIndex + 1, reasonCol + 1).setValue(rejectionReason);
+    }
+    const mailTitle = `成就審核結果通知`;
+    const mailMessage = `很遺憾，您提交的成就「${achievementItemName}」未獲核准。\n\n管理員給您的建議：\n${rejectionReason}\n\n請再接再厲！`;
+    sendAdminMail(mailTitle, mailMessage, "{}", 30); // 發送不含獎勵的通知郵件
+    return `✅ 成就已拒絕，並已發送附帶理由的通知郵件。`;
+  }
+
+  return `✅ 成就已標示為 [${newStatus}]。`;
+}
+
+/**
+ * [玩家用] 取得已核准的成就歷史紀錄，分為「里程碑」和「近期成果」。
+ * @returns {{milestones: Array<object>, recents: Array<object>}} 包含兩類成就的物件。
+ */
+function getCompletedAchievements() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const logSheet = ss.getSheetByName('AchievementLog');
+    const milestoneSheet = ss.getSheetByName('MilestoneLog');
+
+    let milestones = [];
+    const recents = [];
+
+    // 1. 【效能優化】直接從 MilestoneLog 工作表讀取里程碑
+    if (milestoneSheet && milestoneSheet.getLastRow() >= 2) {
+      Logger.log('[getCompletedAchievements] 正在從 MilestoneLog 工作表讀取里程碑...');
+      const milestoneData = milestoneSheet.getDataRange().getValues();
+      const milestoneHeaders = milestoneData[0].map(h => String(h).trim());
+      milestones = milestoneData.slice(1).map(row => {
+        const item = {};
+        milestoneHeaders.forEach((h, i) => {
+          item[h] = (h === 'ApprovalDate') && row[i] instanceof Date ? row[i].toISOString() : row[i];
+        });
+        return item;
+      }).sort((a, b) => new Date(b.ApprovalDate) - new Date(a.ApprovalDate));
+    }
+
+    // 2. 從 AchievementLog 工作表讀取近期成果
+    if (logSheet && logSheet.getLastRow() >= 2) {
+      const headers = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+      const statusCol = headers.indexOf('Status');
+      const isLongTermCol = headers.indexOf('IsLongTerm');
+
+      if (statusCol !== -1) {
+        const lastRow = logSheet.getLastRow();
+        const startRow = Math.max(2, lastRow - 199);
+        const numRows = lastRow - startRow + 1;
+        const recentData = logSheet.getRange(startRow, 1, numRows, headers.length).getValues();
+
+        const recentRows = recentData.filter(row => {
+          const isApproved = String(row[statusCol] || '').trim().toLowerCase() === 'approved';
+          const isLongTerm = (isLongTermCol !== -1) ? row[isLongTermCol] === true : false;
+          return isApproved && !isLongTerm;
+        });
+
+        recents = recentRows.map(row => {
+          const item = {};
+          headers.forEach((h, i) => {
+            item[h] = (h === 'SubmissionDate' || h === 'ApprovalDate') && row[i] instanceof Date ? row[i].toISOString() : row[i];
+          });
+          return item;
+        }).sort((a, b) => new Date(b.ApprovalDate) - new Date(a.ApprovalDate)).slice(0, 50);
+      }
+    }
+
+    return { milestones: milestones, recents: recents };
+  } catch (e) {
+    Logger.log(`[getCompletedAchievements] 執行時發生嚴重錯誤: ${e.message}`);
+    return { milestones: [], recents: [] }; // 發生任何錯誤都回傳空陣列，避免前端報錯
+  }
 }
