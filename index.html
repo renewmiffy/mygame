@@ -102,11 +102,18 @@ body {
     }
 
     .bottom-item {
-      background: #fef9f4; border: 2px solid #d1cfc7; border-radius: 20px; width: 60px; height: 70px;
+      background: #fef9f4; border: 2px solid #d1cfc7; border-radius: 22px; width: 75px; height: 85px; /* 調整按鈕大小 */
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       box-shadow: 2px 2px 5px rgba(0,0,0,0.1); cursor: pointer;
     }
 
+    /* ✅ 新增：讓圖示填滿按鈕，並保留一點邊距 */
+    .bottom-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover; /* 確保圖片填滿容器，可能會裁切邊緣以維持比例 */
+      border-radius: 20px; /* 配合外框的圓角 (比外框的 22px 略小) */
+    }
     .icon {
       font-size: 24px;
     }
@@ -459,25 +466,25 @@ body {
 
 <div class="bottom-bar">
 <div class="bottom-item" onclick="openDailyModal()">
-  <img src="https://renewmiffy.github.io/mygame/img/icons/daily.webp" alt="日常" width="60">
+  <img src="https://renewmiffy.github.io/mygame/img/icons/daily.webp" alt="日常">
 </div>
   <div class="bottom-item" onclick="openStudy()"> <!-- 你之後的學習功能 -->
-    <img src="https://renewmiffy.github.io/mygame/img/icons/study.webp" alt="學習" width="60">
+    <img src="https://renewmiffy.github.io/mygame/img/icons/study.webp" alt="學習">
   </div>
   <div class="bottom-item" onclick="openBag()"> <!-- 尚未實作 -->
-    <img src="https://renewmiffy.github.io/mygame/img/icons/bag.webp" alt="背包" width="60">
+    <img src="https://renewmiffy.github.io/mygame/img/icons/bag.webp" alt="背包">
   </div>
   <div class="bottom-item" onclick="openShop()"> <!-- 尚未實作 -->
-    <img src="https://renewmiffy.github.io/mygame/img/icons/shop.webp" alt="商店" width="60">
+    <img src="https://renewmiffy.github.io/mygame/img/icons/shop.webp" alt="商店">
   </div>
   <div class="bottom-item" onclick="openAchievementModal()">
-    <img src="https://renewmiffy.github.io/mygame/img/icons/achievement.webp" alt="成就" width="60">
+    <img src="https://renewmiffy.github.io/mygame/img/icons/achievement.webp" alt="成就">
   </div>
   <div class="bottom-item" onclick="openMailbox()">
-    <img src="https://renewmiffy.github.io/mygame/img/icons/mail.webp" alt="信箱" width="60"><span id="mail-badge" class="badge hidden"></span>
+    <img src="https://renewmiffy.github.io/mygame/img/icons/mail.webp" alt="信箱"><span id="mail-badge" class="badge hidden"></span>
   </div>
   <div class="bottom-item" onclick="openMissionModal()"> <!-- ✅ 修正後 -->
-    <img src="https://renewmiffy.github.io/mygame/img/icons/todo.webp" alt="任務" width="60">
+    <img src="https://renewmiffy.github.io/mygame/img/icons/todo.webp" alt="任務">
   </div>
 </div>
 
