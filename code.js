@@ -375,6 +375,13 @@ function getMissionList() {
   // ✅ 修正：從計算「總完成數」改為計算「今天完成的任務數」
   const tasksDoneTodayCount = Object.values(taskLastDoneDateMap).filter(dateStr => dateStr === today).length;
 
+  // ✅【核心修改】計算今天從 SkillMaster 中學習了幾個技能
+  const skillLastDoneDateCol = skillHeaders.indexOf("LastDoneDate");
+  const skillsLearnedTodayCount = skillData.slice(1).filter(row => {
+      const lastDoneDate = row[skillLastDoneDateCol];
+      return lastDoneDate && formatYMD(lastDoneDate) === today;
+  }).length;
+
 
   const result = missionRows.map((row, i) => {
     const missionId = getMissionField(row, "MissionID");
@@ -394,6 +401,11 @@ function getMissionList() {
       // ✅ 修正：使用今天完成的任務數來判斷
       currentProgress = tasksDoneTodayCount;
       targetValue = parseInt(param);
+      fulfilled = currentProgress >= targetValue;
+    } else if (conditionType === "SkillsLearnedTodayCount") { // ✅【核心修改】新增條件類型
+      currentProgress = skillsLearnedTodayCount;
+      targetValue = parseInt(param);
+      if (isNaN(targetValue)) throw new Error(`任務 [${name}] 的條件參數 "${param}" 不是一個有效的數字。`);
       fulfilled = currentProgress >= targetValue;
     } else if (conditionType === "TaskDoneToday") { // ✅ 修正：每日任務必須是今天完成的
       const lastDoneDate = taskLastDoneDateMap[param];
@@ -951,7 +963,6 @@ function useItem(itemID, quantity) {
   const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
   const profile = {};
   profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
-
   const invData = inventorySheet.getDataRange().getValues();
   const invHeaders = invData[0];
   const invRows = invData.slice(1);
@@ -975,106 +986,10 @@ function useItem(itemID, quantity) {
   const itemName = itemMaster.ItemName || itemID;
   const itemType = itemMaster.ItemType || 'Consumable'; // 預設為消耗品
   
-  // 對於一次性使用的道具，強制數量為 1
-  const singleUseTypes = ['TreasureChest', 'Redeemable'];
-  if (singleUseTypes.includes(itemType) && quantity > 1) {
-    quantity = 1; // 強制使用 1 個
-  }
-  
-  // ----------------------------------------------------------------
-  // 1. 處理寶箱 (TreasureChest)
-  // ----------------------------------------------------------------
-  if (itemType === 'TreasureChest') {
-    const lootTableJson = itemMaster.LootTableJSON || '[]';
-    let lootTable;
-    try {
-      lootTable = JSON.parse(lootTableJson);
-      if (!Array.isArray(lootTable) || lootTable.length === 0) {
-        throw new Error("獎池為空或格式不正確。");
-      }
-    } catch (e) {
-      throw new Error(`❌ 無法解析寶箱 [${itemName}] 的獎池設定 (LootTableJSON): ${e.message}`);
-    }
-    
-    // ✅【核心修改】在抽獎前，先讀取玩家已擁有的外觀
-    const wardrobeSheet = ss.getSheetByName("Wardrobe");
-    const wardrobeData = wardrobeSheet.getDataRange().getValues();
-    const ownedAppearanceFilenames = new Set(wardrobeData.slice(1).map(row => row[wardrobeSheet.getRange(1, 1, 1, wardrobeSheet.getLastColumn()).getValues()[0].indexOf("Filename")]));
-
-    // ✅【核心修改】執行單抽，並傳入已擁有外觀列表
-    const pullResult = _performSinglePull(lootTable, itemData, itemHeaders, ownedAppearanceFilenames, ss);
-    
-    // ✅ 修正：將消耗寶箱的邏輯移到最前面，確保一定會執行
-    // 消耗寶箱
-    if (count - quantity <= 0) {
-      inventorySheet.deleteRow(invIndex + 2);
-    } else {
-      inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity);
-    }
-    
-    // --- 發放獎勵 ---
-    let resultMessage = "";
-    if (pullResult.type === 'currency') {
-      // ✅ 使用新的獎勵處理函式
-      const rewardsToApply = { [pullResult.rewardID]: pullResult.quantity };
-      const { finalRewards } = applyRewards(profile, rewardsToApply, `開啟寶箱 - ${itemName}`);
-      resultMessage = `恭喜！你從 ${itemName} 中獲得了 ${pullResult.displayName} (+${finalRewards[pullResult.rewardID]})！`;
-    } else if (pullResult.type === 'duplicate_appearance') {
-      // ✅【核心修改】處理抽中的重複外觀，補償改為 500 金幣
-      const rewardsToApply = { 'Coins': 500 }; // 重複外觀轉為 500 金幣
-      const { finalRewards } = applyRewards(profile, rewardsToApply, `開啟寶箱 - ${itemName} (重複外觀)`);
-      resultMessage = `從 ${itemName} 中抽到重複外觀【${pullResult.itemName}】，已轉換為 ${finalRewards['Coins']} 金幣！`;
-    } else if (pullResult.type === 'appearance') {
-      // ✅【核心修改】處理抽中的外觀
-      const wardrobeSheet = ss.getSheetByName("Wardrobe");
-      wardrobeSheet.appendRow([pullResult.filename, pullResult.shortType, new Date()]);
-      resultMessage = `🎉 恭喜！你從 ${itemName} 中獲得了【新外觀】${pullResult.itemName}！`;
-      // 外觀沒有數值變化，但我們仍需寫入 profile 以觸發日誌
-      writeProfile(profile, `開啟寶箱 - ${itemName}`);
-    } else {
-      // 發放道具
-      const invData = inventorySheet.getDataRange().getValues();
-      const invHeaders = invData[0];
-      const invRows = invData.slice(1);
-      const itemIDCol = invHeaders.indexOf("ItemID");
-      const countCol = invHeaders.indexOf("Count");
-      const existingItemIndex = invRows.findIndex(r => r[itemIDCol] === pullResult.itemID);
-      
-      if (existingItemIndex !== -1) {
-        const sheetRowIndex = existingItemIndex + 2;
-        const currentCount = parseInt(invRows[existingItemIndex][countCol]) || 0;
-        inventorySheet.getRange(sheetRowIndex, countCol + 1).setValue(currentCount + 1);
-      } else {
-        const newRow = invHeaders.map(h => (h === "ItemID") ? pullResult.itemID : (h === "Count" ? 1 : ""));
-        inventorySheet.appendRow(newRow);
-      }
-      resultMessage = `恭喜！你從 ${itemName} 中獲得了【${pullResult.rarity}★】${pullResult.itemName}！`;
-    }
-    
-    // 寫入日誌
-    const logHeaders = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
-    const logEntry = {
-        CreatedAt: new Date(),
-        Type: 'action',
-        ActionName: `開啟寶箱`,
-        Source: resultMessage.replace('恭喜！', '').trim()
-    };
-    const logRow = logHeaders.map(header => logEntry[header] || '');
-    logSheet.appendRow(logRow);
-    // ✅ 修正：回傳結構化資料，與十連抽一致，方便前端統一處理動畫後的結果顯示
-    return [{
-      itemName: pullResult.itemName || pullResult.displayName,
-      // ✅【核心修改】為新外觀設定一個特殊的稀有度，方便前端顯示
-      rarity: pullResult.rarity,
-      type: pullResult.type,
-      rewardID: pullResult.rewardID,
-      quantity: pullResult.quantity
-    }];
-  }
   // ----------------------------------------------------------------
   // ✅ 新增：處理固定內容禮包 (FixedBundle)
   // ----------------------------------------------------------------
-  else if (itemType === 'FixedBundle') {
+  if (itemType === 'FixedBundle') {
     const effectJson = itemMaster.Effect || '{}';
     const itemsGranted = [];
     const itemsToAdd = {};
@@ -1502,7 +1417,7 @@ function buyItem(itemID) {
  * @returns {Array<object>} - 包含 10 個獎勵物品的陣列
  */
 function buyAndOpenTenItems(itemID) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = SpreadsheetApp.openById(getConfig().SPREADSHEET_ID);
   const profileSheet = ss.getSheetByName("Profile");
   const itemSheet = ss.getSheetByName("ItemMaster");
   const inventorySheet = ss.getSheetByName("Inventory");
@@ -1651,131 +1566,6 @@ function buyAndOpenTenItems(itemID) {
  * @returns {Array<object>} - 包含 10 個獎勵物品的陣列
  */
 function useTenItems(itemID) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const itemSheet = ss.getSheetByName("ItemMaster");
-  const profileSheet = ss.getSheetByName("Profile");
-  const inventorySheet = ss.getSheetByName("Inventory");
-  const logSheet = ss.getSheetByName("PlayerLog");
-
-  // --- 1. 讀取資料 & 檢查背包數量 ---
-  const invData = inventorySheet.getDataRange().getValues();
-  const invHeaders = invData[0];
-  const invRows = invData.slice(1);
-  const itemIDColInv = invHeaders.indexOf("ItemID");
-  const countColInv = invHeaders.indexOf("Count");
-  
-  const invIndex = invRows.findIndex(r => r[itemIDColInv] === itemID);
-  if (invIndex === -1) throw new Error("❌ 背包中找不到此寶箱。");
-  
-  const currentCount = parseInt(invRows[invIndex][countColInv] || 0);
-  if (currentCount < 10) throw new Error(`⚠️ 寶箱數量不足！十連開需要 10 個，但你只有 ${currentCount} 個。`);
-
-  const itemData = itemSheet.getDataRange().getValues();
-  const itemHeaders = itemData[0];
-  const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
-  if (!itemRow) throw new Error("❌ 找不到此商品的主資料。");
-
-  const item = {};
-  itemHeaders.forEach((h, i) => item[h] = itemRow[i]);
-  if (item.ItemType !== 'TreasureChest') throw new Error("❌ 此物品不是寶箱，無法十連開。");
-
-  // --- 2. 執行 10 次抽獎 ---
-  const lootTable = JSON.parse(item.LootTableJSON || '[]');
-  // ✅【核心修改】在抽獎前，先讀取玩家已擁有的外觀
-  const wardrobeSheet = ss.getSheetByName("Wardrobe");
-  const wardrobeData = wardrobeSheet.getDataRange().getValues();
-  const ownedAppearanceFilenames = new Set(wardrobeData.slice(1).map(row => row[wardrobeSheet.getRange(1, 1, 1, wardrobeSheet.getLastColumn()).getValues()[0].indexOf("Filename")]));
-
-  const results = [];
-  for (let i = 0; i < 10; i++) {
-    // ✅【核心修改】呼叫全域抽獎函式
-    results.push(_performSinglePull(lootTable, itemData, itemHeaders, ownedAppearanceFilenames, ss));
-  }
-
-  // --- 3. 檢查並觸發動態保底機制 ---
-  const itemRarityLoot = lootTable.filter(l => (l.Type || "ItemRarity") === "ItemRarity");
-  if (itemRarityLoot.length > 0) {
-    const maxRarity = Math.max(...itemRarityLoot.map(l => parseInt(l.Rarity) || 0));
-    const hasGuaranteedItem = results.some(r => r.type === 'item' && parseInt(r.rarity) === maxRarity);
-
-    if (!hasGuaranteedItem) {
-      Logger.log(`[十連開] 未抽中該獎池最高星級 ${maxRarity}★ 道具，觸發保底機制！`);
-      const guaranteedLootTable = itemRarityLoot.filter(l => parseInt(l.Rarity) === maxRarity);
-
-      if (guaranteedLootTable.length > 0) {
-        // ✅【核心修改】呼叫全域抽獎函式
-        const guaranteedItem = _performSinglePull(guaranteedLootTable, itemData, itemHeaders, ownedAppearanceFilenames, ss);
-        results[9] = guaranteedItem; // 替換最後一個結果
-        Logger.log(`[十連開] 保底抽中：${guaranteedItem.rarity}★ ${guaranteedItem.itemName}`);
-      }
-    }
-  }
-
-  // --- 4. 消耗背包中的寶箱 & 發放獎勵 ---
-  const newCount = currentCount - 10;
-  if (newCount <= 0) {
-    inventorySheet.deleteRow(invIndex + 2);
-  } else {
-    inventorySheet.getRange(invIndex + 2, countColInv + 1).setValue(newCount);
-  }
-
-  // ✅ 修正：直接讀取 Profile 工作表，確保鍵的大小寫正確，避免屬性被歸零
-  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-  const profile = {};
-  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
-
-  const currencyRewards = {};
-  results.filter(r => r.type === 'currency').forEach(res => {
-    currencyRewards[res.rewardID] = (currencyRewards[res.rewardID] || 0) + parseFloat(res.quantity);
-  });
-  // ✅ 使用新的獎勵處理函式
-  applyRewards(profile, currencyRewards, `十連開 - ${item.ItemName}`);
-
-  // ✅【核心修改】處理抽中的重複外觀
-  const duplicateCount = results.filter(r => r.type === 'duplicate_appearance').length;
-  if (duplicateCount > 0) {
-    applyRewards(profile, { 'Coins': 500 * duplicateCount }, `十連開 - ${item.ItemName} (重複外觀)`);
-  }
-
-  // 批次發放道具 (與 buyAndOpenTenItems 相同)
-  const itemsToAdd = {};
-  results.filter(r => r.type === 'item').forEach(res => { 
-    itemsToAdd[res.itemID] = (itemsToAdd[res.itemID] || 0) + 1; 
-  });
-
-  // ✅【核心修改】處理抽中的新外觀
-  const newAppearances = results.filter(r => r.type === 'appearance');
-  if (newAppearances.length > 0) {
-    const wardrobeSheet = ss.getSheetByName("Wardrobe");
-    newAppearances.forEach(app => wardrobeSheet.appendRow([app.filename, app.shortType, new Date()]));
-  }
-
-  const inventoryMap = {};
-  const currentInvData = inventorySheet.getDataRange().getValues(); // 重新讀取，因為可能剛刪除過
-  currentInvData.slice(1).forEach((row, index) => {
-    inventoryMap[row[itemIDColInv]] = { count: parseInt(row[countColInv]) || 0, sheetRow: index + 2 };
-  });
-  const rowsToAppend = [];
-  Object.entries(itemsToAdd).forEach(([id, qty]) => {
-    if (inventoryMap[id] && item.IsStackable !== false) {
-      inventorySheet.getRange(inventoryMap[id].sheetRow, countColInv + 1).setValue(inventoryMap[id].count + qty);
-    } else {
-      rowsToAppend.push(invHeaders.map(h => (h === "ItemID") ? id : (h === "Count" ? qty : "")));
-    }
-  });
-  if (rowsToAppend.length > 0) {
-    inventorySheet.getRange(inventorySheet.getLastRow() + 1, 1, rowsToAppend.length, invHeaders.length).setValues(rowsToAppend);
-  }
-
-  // --- 5. 回傳結果給前端 ---
-  return results.map(r => ({
-    itemName: r.itemName || r.displayName,
-    rarity: r.rarity,
-    type: r.type,
-    rewardID: r.rewardID,
-    quantity: r.quantity
-  }));
 }
 /**
  * [管理頁面用] 取得所有待處理的兌換請求
@@ -2713,6 +2503,118 @@ function updateEquippedItems(selection) {
 
   // ✅【核心修正】直接呼叫 getQuickStatus() 並回傳最新的資料，避免前端讀到舊資料。
   return getQuickStatus();
+}
+
+/**
+ * [新函式] 處理批次開啟寶箱，包含保底機制。
+ * @param {string} itemID - 寶箱的 ItemID。
+ * @param {number} quantity - 開啟的數量。
+ * @param {boolean} isPurchase - 是否為從商店購買。
+ * @returns {Array<object>} - 包含所有獎勵物品的陣列。
+ */
+function openMultipleChests(itemID, quantity, isPurchase) {
+  const ss = SpreadsheetApp.openById(getConfig().SPREADSHEET_ID);
+  const profileSheet = ss.getSheetByName("Profile");
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  const inventorySheet = ss.getSheetByName("Inventory");
+
+  // --- 1. 讀取資料 & 檢查費用/數量 ---
+  const itemData = itemSheet.getDataRange().getValues();
+  const itemHeaders = itemData[0];
+  const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
+  if (!itemRow) throw new Error("❌ 找不到此商品。");
+
+  const item = {};
+  itemHeaders.forEach((h, i) => item[h] = itemRow[i]);
+  if (item.ItemType !== 'TreasureChest') throw new Error("❌ 此物品不是寶箱。");
+
+  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
+  const profile = {};
+  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
+
+  if (isPurchase) {
+    const price = (parseInt(item.BuyPrice) || 0) * quantity;
+    const honorPrice = (parseInt(item.HonorBuyPrice) || 0) * quantity;
+    if (price > 0 && (parseInt(profile.Coins) || 0) < price) throw new Error(`⚠️ 金幣不足！需要 ${price}。`);
+    if (honorPrice > 0 && (parseInt(profile.HonorPoints) || 0) < honorPrice) throw new Error(`⚠️ 榮譽點數不足！需要 ${honorPrice}。`);
+    if (price > 0) profile.Coins -= price;
+    if (honorPrice > 0) profile.HonorPoints -= honorPrice;
+  } else {
+    const invData = inventorySheet.getDataRange().getValues();
+    const invHeaders = invData[0];
+    const invIndex = invData.slice(1).findIndex(r => r[invHeaders.indexOf("ItemID")] === itemID);
+    if (invIndex === -1) throw new Error("❌ 背包中找不到此寶箱。");
+    const currentCount = parseInt(invData[invIndex + 1][invHeaders.indexOf("Count")] || 0);
+    if (currentCount < quantity) throw new Error(`⚠️ 寶箱數量不足！需要 ${quantity} 個，但你只有 ${currentCount} 個。`);
+    const newCount = currentCount - quantity;
+    if (newCount <= 0) inventorySheet.deleteRow(invIndex + 2);
+    else inventorySheet.getRange(invIndex + 2, invHeaders.indexOf("Count") + 1).setValue(newCount);
+  }
+
+  // --- 2. 執行抽獎 & 保底機制 ---
+  const lootTable = JSON.parse(item.LootTableJSON || '[]');
+  const wardrobeSheet = ss.getSheetByName("Wardrobe");
+  const wardrobeData = wardrobeSheet.getDataRange().getValues();
+  const ownedAppearanceFilenames = new Set(wardrobeData.slice(1).map(row => row[wardrobeSheet.getRange(1, 1, 1, wardrobeSheet.getLastColumn()).getValues()[0].indexOf("Filename")]));
+
+  const allResults = [];
+  // ✅【核心修改】從 ItemMaster 讀取保底設定，若無則使用預設值
+  const pityCounter = parseInt(item.PityCounter) || 10; // 每幾抽保底
+  const pityRarity = parseInt(item.PityRarity) || 3;   // 保底幾星或以上
+
+  for (let i = 0; i < quantity; i++) {
+    allResults.push(_performSinglePull(lootTable, itemData, itemHeaders, ownedAppearanceFilenames, ss));
+  }
+
+  // 執行保底檢查
+  for (let i = 0; i < Math.floor(quantity / pityCounter); i++) {
+    const batch = allResults.slice(i * pityCounter, (i + 1) * pityCounter);
+    const hasPityItem = batch.some(r => r.type === 'item' && parseInt(r.rarity) >= pityRarity);
+
+    if (!hasPityItem) {
+      Logger.log(`[多連抽] 第 ${i * pityCounter + 1}-${(i + 1) * pityCounter} 抽未中 ${pityRarity}★ 以上道具，觸發保底！`);
+      const guaranteedLootTable = lootTable.filter(l => (l.Type || "ItemRarity") === "ItemRarity" && parseInt(l.Rarity) >= pityRarity);
+      if (guaranteedLootTable.length > 0) {
+        const guaranteedItem = _performSinglePull(guaranteedLootTable, itemData, itemHeaders, ownedAppearanceFilenames, ss);
+        allResults[i * pityCounter + (pityCounter - 1)] = guaranteedItem; // 替換該批次的最後一個結果
+        Logger.log(`[多連抽] 保底抽中：${guaranteedItem.rarity}★ ${guaranteedItem.itemName}`);
+      }
+    }
+  }
+
+  // --- 3. 批次結算獎勵 ---
+  const currencyRewards = {};
+  const itemsToAdd = {};
+  const newAppearances = [];
+  let duplicateCount = 0;
+
+  allResults.forEach(res => {
+    if (res.type === 'currency') currencyRewards[res.rewardID] = (currencyRewards[res.rewardID] || 0) + parseFloat(res.quantity);
+    else if (res.type === 'item') itemsToAdd[res.itemID] = (itemsToAdd[res.itemID] || 0) + 1;
+    else if (res.type === 'appearance') newAppearances.push(res);
+    else if (res.type === 'duplicate_appearance') duplicateCount++;
+  });
+
+  const sourceName = `開啟 ${item.ItemName} x${quantity}`;
+  applyRewards(profile, currencyRewards, sourceName);
+  if (duplicateCount > 0) applyRewards(profile, { 'Coins': 500 * duplicateCount }, `${sourceName} (重複外觀)`);
+
+  if (newAppearances.length > 0) {
+    const rows = newAppearances.map(app => [app.filename, app.shortType, new Date()]);
+    wardrobeSheet.getRange(wardrobeSheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  }
+
+  grantItemsToInventory(itemsToAdd); // 使用批次發放道具函式
+
+  // --- 4. 回傳結果 ---
+  return allResults.map(r => ({
+    itemName: r.itemName || r.displayName,
+    rarity: r.rarity,
+    type: r.type,
+    rewardID: r.rewardID,
+    quantity: r.quantity
+  }));
 }
 
 /**

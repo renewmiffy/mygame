@@ -1756,7 +1756,7 @@ function renderBagItems(items) {
     // ✅ 新增十連開按鈕
     let tenUseBtn = '';
     if (i.ItemType === 'TreasureChest' && i.Count >= 10) {
-      tenUseBtn = `<button onclick="useTenItems('${i.ItemID}')" style="background-color: #4682B4; color: white;">使用10個</button>`;
+      tenUseBtn = `<button onclick="playChestAnimationAndOpen(10, '${i.ItemID}', false)" style="background-color: #4682B4; color: white;">使用10個</button>`;
     }
 
     const actionBtn = `<button onclick="handleUseItem('${i.ItemID}', '${encodeURIComponent(i.ItemName)}', ${i.Count}, '${i.ItemType}')">使用</button>`;
@@ -1839,43 +1839,51 @@ function mapFieldToName(field) {
 
 let pendingUseItemID = null;
 let pendingUseMax = 1;
-
 function handleUseItem(itemID, encodedItemName, maxCount, itemType) {
-  // 對於這些一次性使用的道具，或數量只有1的，直接使用
-  const singleUseTypes = ['TreasureChest', 'Redeemable', 'OneTimeDiscountCoupon', 'BuffItem'];
   const itemName = decodeURIComponent(encodedItemName);
-  if (singleUseTypes.includes(itemType) || maxCount === 1) {
-    showConfirmModal(
-      `🎒 使用道具`,
-      `確定要使用 <strong>${itemName}</strong> 嗎？`,
-      () => {
-        if (itemType === 'TreasureChest') {
-          playChestAnimationAndOpen(1, itemID, false);
-        } else {
-          useItem(itemID, 1);
-        }
-      }
-    );
+
+  // ✅【核心修正】根據物品類型決定流程
+  if (itemType === 'TreasureChest') {
+    // 如果是寶箱，一律顯示數量輸入框
+    showUseModal(itemID, encodedItemName, maxCount, itemType);
   } else {
-    // 對於其他可堆疊的道具 (如 Consumable)，顯示數量選擇視窗
-    showUseModal(itemID, encodedItemName, maxCount);
+    const singleUseTypes = ['Redeemable', 'OneTimeDiscountCoupon', 'BuffItem'];
+    if (singleUseTypes.includes(itemType) || maxCount === 1) {
+      // 對於一次性使用的道具，顯示簡單確認
+      showConfirmModal(
+        `🎒 使用道具`,
+        `確定要使用 <strong>${itemName}</strong> 嗎？`,
+        () => { useItem(itemID, 1); }
+      );
+    } else {
+      // 對於其他可堆疊的道具，顯示數量輸入框
+      showUseModal(itemID, encodedItemName, maxCount, itemType);
+    }
   }
 }
 
-function showUseModal(itemID, encodedItemName, maxCount) {
+function showUseModal(itemID, encodedItemName, maxCount, itemType) {
   pendingUseItemID = itemID;
   pendingUseMax = maxCount;
   document.getElementById('confirm-use-name').innerText = decodeURIComponent(encodedItemName);
   const qtyInput = document.getElementById('confirm-use-qty');
   qtyInput.max = maxCount;
   qtyInput.value = 1;
-  document.getElementById('confirm-use-modal').classList.remove('hidden');
+  const modal = document.getElementById('confirm-use-modal');
+  modal.dataset.itemType = itemType; // ✅ 儲存物品類型
+  modal.classList.remove('hidden');
 }
 
 function confirmUse() {
   if (!pendingUseItemID) return;
   const qty = Math.min(pendingUseMax, Math.max(1, parseInt(document.getElementById('confirm-use-qty').value) || 1));
-  useItem(pendingUseItemID, qty);
+  const itemType = document.getElementById('confirm-use-modal').dataset.itemType; // 從 modal 讀取類型
+
+  if (itemType === 'TreasureChest') {
+    playChestAnimationAndOpen(qty, pendingUseItemID, false);
+  } else {
+    useItem(pendingUseItemID, qty);
+  }
   closeModal(document.getElementById('confirm-use-modal').querySelector('button')); // 關閉視窗
 }
 
@@ -2032,7 +2040,7 @@ function renderShopItems(items) {
         priceHtml = `<div style="margin-top: 5px; font-weight: bold; color: #dc3545;">${priceIcon} ${salePrice} <del style="color:#999; margin-left:5px;">${originalPrice}</del></div>`;
         if (item.ItemType === 'TreasureChest') {
           const tenPullPriceHtml = `<div style="margin-top: 5px; font-weight: bold; color: #dc3545;">${priceIcon} ${salePrice * 10} <del style="color:#999; margin-left:5px;">${originalTenPullPrice}</del></div>`;
-          tenPullButton = `<div><button onclick="buyTenItems('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button>${tenPullPriceHtml}</div>`;
+          tenPullButton = `<div><button onclick="playChestAnimationAndOpen(10, '${item.ItemID}', true)" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button>${tenPullPriceHtml}</div>`;
         }
       } else if (activeEffects.nextPurchaseDiscount > 0) {
         const discountRate = (100 - activeEffects.nextPurchaseDiscount) / 100;
@@ -2041,7 +2049,7 @@ function renderShopItems(items) {
         if (item.ItemType === 'TreasureChest') {
           const finalTenPullPrice = Math.round(originalTenPullPrice * discountRate);
           const tenPullPriceHtml = `<div style="margin-top: 5px; font-weight: bold; color: #dc3545;">${priceIcon} ${finalTenPullPrice} <del style="color:#999; margin-left:5px;">${originalTenPullPrice}</del></div>`;
-          tenPullButton = `<div><button onclick="buyTenItems('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button>${tenPullPriceHtml}</div>`;
+          tenPullButton = `<div><button onclick="playChestAnimationAndOpen(10, '${item.ItemID}', true)" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button>${tenPullPriceHtml}</div>`;
         }
       } else {
         // 沒有特價，檢查 Buff 折扣
@@ -2058,7 +2066,7 @@ function renderShopItems(items) {
           const tenPullPriceHtml = (finalTenPullPrice < originalTenPullPrice)
             ? `<div style="margin-top: 5px; font-weight: bold; color: #28a745;">${priceIcon} ${finalTenPullPrice} <del style="color:#999; margin-left:5px;">${originalTenPullPrice}</del></div>`
             : `<div style="margin-top: 5px; font-weight: bold;">${priceIcon} ${originalTenPullPrice}</div>`;
-          tenPullButton = `<div><button onclick="buyTenItems('${item.ItemID}')" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button>${tenPullPriceHtml}</div>`;
+          tenPullButton = `<div><button onclick="playChestAnimationAndOpen(10, '${item.ItemID}', true)" class="${currencyType === 'honor' ? 'honor-buy-btn' : ''}" style="font-size: 1em; padding: 8px 12px;">購買10個</button>${tenPullPriceHtml}</div>`;
         }
       }
 
@@ -2130,15 +2138,6 @@ function buyItem(itemID) {
         .withFailureHandler(err => { showToast("❌ 購買失敗：" + err.message); })
         .buyItem(itemID);
     }
-  );
-}
-
-// ✅ 新增：十連抽前端函式
-function buyTenItems(itemID) {
-  showConfirmModal(
-    `🎉 進行十連抽`,
-    `確定要進行十連抽嗎？<br>將會消耗10倍的價格。`,
-    () => playChestAnimationAndOpen(10, itemID, true)
   );
 }
 
@@ -2226,9 +2225,11 @@ function playChestAnimationAndOpen(quantity, itemID, isPurchase = false) {
     showToast(`❌ 開啟失敗：` + err.message);
   };
 
-  if (quantity === 1) google.script.run.withSuccessHandler(successHandler).withFailureHandler(failureHandler).useItem(itemID, 1);
-  else if (isPurchase) google.script.run.withSuccessHandler(successHandler).withFailureHandler(failureHandler).buyAndOpenTenItems(itemID);
-  else google.script.run.withSuccessHandler(successHandler).withFailureHandler(failureHandler).useTenItems(itemID);
+  // ✅【核心修正】統一呼叫新的後端函式
+  google.script.run
+    .withSuccessHandler(successHandler)
+    .withFailureHandler(failureHandler)
+    .openMultipleChests(itemID, quantity, isPurchase);
 }
 
 // --- 郵件系統相關函式 ---
