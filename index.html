@@ -490,8 +490,8 @@ body {
 </div>
 
   <div class="side-bar">
-    <div class="side-item">🎨 換裝</div>
-    <div class="side-item">🏅 成就</div>
+    <div class="side-item" onclick="openWardrobe()">🎨 換裝</div>
+    <div class="side-item">� 成就</div>
     <div class="side-item">⚙️ 設定</div>
   </div>
   <!-- 右下角 最近紀錄 浮窗 -->
@@ -947,6 +947,52 @@ body {
   100% { box-shadow: 0 0 30px #ffd700; }
 }
 </style>
+
+<!-- ✅ 新增：換裝間專用樣式 -->
+<style>
+.wardrobe-category { margin-bottom: 15px; }
+.wardrobe-category h4 { border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 10px; color: #5c4033; }
+.wardrobe-item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; }
+.wardrobe-item-card {
+  border: 3px solid #d1cfc7;
+  border-radius: 8px;
+  cursor: pointer;
+  aspect-ratio: 1 / 1;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  transition: all 0.2s ease;
+}
+.wardrobe-item-card:hover { border-color: #a08468; }
+.wardrobe-item-card.selected {
+  border-color: #007bff;
+  box-shadow: 0 0 8px rgba(0, 123, 255, 0.7);
+}
+.wardrobe-item-card .item-name { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color: white; font-size: 12px; padding: 3px; text-align: center; border-radius: 0 0 4px 4px; }
+</style>
+
+<!-- 🎨 換裝 Modal -->
+<div id="wardrobe-modal" class="adventure-modal hidden">
+  <button onclick="closeModal(this)" style="position:absolute; top:10px; right:10px;">❌</button>
+  <div class="adventure-content">
+    <h3>🎨 換裝間</h3>
+    <div id="wardrobe-container" style="display: flex; gap: 20px;">
+      <!-- 左側預覽區 -->
+      <div id="wardrobe-preview" style="flex-basis: 40%; border: 2px dashed #ccc; border-radius: 8px; position: relative; background-color: #f0f0f0; min-height: 300px;">
+        <img id="wardrobe-preview-bg" style="width: 100%; height: 100%; object-fit: cover; border-radius: 6px;">
+        <img id="wardrobe-preview-char" style="position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); height: 80%;">
+      </div>
+      <!-- 右側選擇區 -->
+      <div id="wardrobe-selection" style="flex-basis: 60%; max-height: 450px; overflow-y: auto; padding-right: 10px;">
+        <!-- JS 會載入內容 -->
+      </div>
+    </div>
+    <div style="text-align:center; margin-top: 20px;">
+      <button onclick="saveOutfit()" class="approve-btn">儲存穿搭</button>
+    </div>
+  </div>
+</div>
+
 
 
 
@@ -1466,6 +1512,10 @@ function refreshMainGameUI(callback) {
       if (data.characterUrl) {
         document.getElementById('character').src = data.characterUrl;
       }
+      // ✅【問題1修正】新增：更新背景圖片
+      if (data.backgroundUrl) {
+        document.getElementById('background').src = data.backgroundUrl;
+      }
       // 更新 Header Bar
       updateHeaderBar(data);
       // 更新 Side Panel
@@ -1506,7 +1556,7 @@ function updateHeaderBar(data) {
   // --- 更新並播放金幣動畫 ---
   const coinEl = document.getElementById('coins');
   const coinContainer = coinEl.parentElement;
-  const coinVal = parseFloat(data.Coins) || 0;
+  const coinVal = parseFloat(data.coins) || 0;
   const oldCoinVal = parseFloat(currentDisplayValues.Coins) || 0;
   const coinDiff = Math.round(coinVal - oldCoinVal);
   if (coinDiff !== 0) {
@@ -1518,7 +1568,7 @@ function updateHeaderBar(data) {
   // --- 更新並播放榮譽點數動畫 ---
   const honorEl = document.getElementById('honorPoints');
   const honorContainer = honorEl.parentElement;
-  const honorVal = parseFloat(data.HonorPoints) || 0;
+  const honorVal = parseFloat(data.honorPoints) || 0;
   const oldHonorVal = parseFloat(currentDisplayValues.HonorPoints) || 0;
   const honorDiff = Math.round(honorVal - oldHonorVal);
   if (honorDiff !== 0) {
@@ -2433,6 +2483,102 @@ function renderAchievementHistory(data) {
     return;
   }
 }
+</script>
+
+<!-- ✅ 新增：換裝系統相關腳本 -->
+<script>
+  // 用於儲存換裝間中的預覽選項
+  let wardrobeSelection = {
+    background: null,
+    character: null
+  };
+
+  function openWardrobe() {
+    const modal = document.getElementById('wardrobe-modal');
+    modal.classList.remove('hidden');
+    const selectionContainer = document.getElementById('wardrobe-selection');
+    selectionContainer.innerHTML = '<div>正在載入您的衣櫃...</div>';
+
+    google.script.run
+      .withSuccessHandler(renderWardrobe)
+      .withFailureHandler(err => {
+        selectionContainer.innerHTML = `<div>無法載入：${err.message}</div>`;
+      })
+      .getWardrobeItems(); // 假設後端有此函式
+  }
+
+  function renderWardrobe(data) {
+    const { ownedItems, equippedItems } = data;
+    const selectionContainer = document.getElementById('wardrobe-selection');
+    selectionContainer.innerHTML = '';
+
+    // 初始化預覽和選擇狀態
+    wardrobeSelection.background = equippedItems.background;
+    wardrobeSelection.character = equippedItems.character;
+    updateWardrobePreview();
+
+    const categories = {
+      Background: [],
+      Character: []
+    };
+
+    ownedItems.forEach(item => {
+      if (categories[item.ItemType]) {
+        categories[item.ItemType].push(item);
+      }
+    });
+
+    const renderCategory = (title, type, items) => {
+      let itemsHtml = items.map(item => {
+        const isSelected = wardrobeSelection[type.toLowerCase()] === item.ItemID;
+        return `
+          <div class="wardrobe-item-card ${isSelected ? 'selected' : ''}" 
+               id="wardrobe-item-${item.ItemID}"
+               style="background-image: url('${item.AssetUrl}')" 
+               onclick="selectWardrobeItem('${type.toLowerCase()}', '${item.ItemID}', '${item.AssetUrl}')">
+            <div class="item-name">${item.ItemName}</div>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="wardrobe-category" id="wardrobe-category-${type.toLowerCase()}">
+          <h4>${title}</h4>
+          <div class="wardrobe-item-grid">${itemsHtml}</div>
+        </div>
+      `;
+    };
+
+    selectionContainer.innerHTML += renderCategory('🖼️ 背景', 'Background', categories.Background || []);
+    selectionContainer.innerHTML += renderCategory('👤 造型', 'Character', categories.Character || []);
+  }
+
+  function selectWardrobeItem(type, itemId, assetUrl) {
+    // 更新選擇
+    wardrobeSelection[type] = itemId;
+    
+    // 更新預覽
+    updateWardrobePreview();
+
+    // 更新UI上 'selected' class
+    document.querySelectorAll(`#wardrobe-category-${type} .wardrobe-item-card`).forEach(card => {
+      card.classList.remove('selected');
+    });
+    document.getElementById(`wardrobe-item-${itemId}`).classList.add('selected');
+  }
+
+  function updateWardrobePreview() {
+    document.getElementById('wardrobe-preview-bg').src = document.getElementById(`wardrobe-item-${wardrobeSelection.background}`)?.style.backgroundImage.slice(5, -2) || '';
+    document.getElementById('wardrobe-preview-char').src = document.getElementById(`wardrobe-item-${wardrobeSelection.character}`)?.style.backgroundImage.slice(5, -2) || '';
+  }
+
+  function saveOutfit() {
+    showToast('正在儲存您的新造型...', 2000);
+    google.script.run
+      .withSuccessHandler(() => { showToast('✅ 造型已更新！'); refreshMainGameUI(); closeModal(document.getElementById('wardrobe-modal').querySelector('button')); })
+      .withFailureHandler(err => { showToast(`❌ 儲存失敗：${err.message}`); })
+      .updateEquippedItems(wardrobeSelection); // 假設後端有此函式
+  }
 </script>
 
 </html>

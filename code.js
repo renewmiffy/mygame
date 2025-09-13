@@ -818,17 +818,22 @@ function getQuickStatus() {
   }
 
   return {
-    Coins: profile.Coins || 0,
-    HonorPoints: profile.HonorPoints || 0,
-    Cleanliness: profile.Cleanliness || 0,
-    Mood: profile.Mood || 0,
-    Energy: profile.Energy || 0,
-    Health: profile.Health || 0,
-    SelfDiscipline: profile.SelfDiscipline || 0,
+    // ✅ 修正：確保回傳所有 profile 屬性，與 getProfileData() 一致
+    playerName: profile.PlayerName,
+    birthday: (profile.birthday instanceof Date) ? Utilities.formatDate(profile.birthday, Session.getScriptTimeZone(), "yyyy/MM/dd") : (profile.birthday || ''),
+    coins: profile.Coins || 0,
+    honorPoints: profile.HonorPoints || 0,
+    cleanliness: profile.Cleanliness || 0,
+    mood: profile.Mood || 0,
+    energy: profile.Energy || 0,
+    health: profile.Health || 0,
+    selfDiscipline: profile.SelfDiscipline || 0,
     StatusList: statusList,
-    // ✅ 新增：回傳計算後的角色圖片 URL
+    // ✅ 修正：同時回傳背景和角色圖片 URL
+    backgroundUrl: "https://renewmiffy.github.io/mygame/img/bg/" + profile.currentBackground,
     characterUrl: "https://renewmiffy.github.io/mygame/img/char/" + finalCharacterFile,
-    effectsSummary: effectsSummary // ✅ 新增
+    effectsSummary: effectsSummary,
+    unreadMailCount: getUnreadMailCount() // ✅ 新增：刷新時也回傳未讀郵件數
   };
 }
 function getInventory() {
@@ -2582,6 +2587,88 @@ function getAdminRewardOptions() {
   return {
     items: items
   };
+}
+
+/**
+ * [換裝系統] 取得玩家擁有的所有外觀，以及當前裝備的外觀。
+ * @returns {{ownedItems: Array<object>, equippedItems: {background: string, character: string}}}
+ */
+function getWardrobeItems() {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const profileSheet = ss.getSheetByName("Profile");
+    const wardrobeSheet = ss.getSheetByName("Wardrobe");
+    const imageMasterSheet = ss.getSheetByName("ImageMaster");
+
+    if (!profileSheet || !wardrobeSheet || !imageMasterSheet) {
+        throw new Error("❌ 找不到必要的資料表 (Profile/Wardrobe/ImageMaster)。");
+    }
+
+    // 1. 取得當前裝備
+    const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+    const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
+    const equippedItems = {
+        background: profileRow[profileHeaders.indexOf('currentBackground')] || '',
+        character: profileRow[profileHeaders.indexOf('currentCharacter')] || ''
+    };
+
+    // 2. 建立 ImageMaster 的快取
+    const masterData = imageMasterSheet.getDataRange().getValues();
+    const masterHeaders = masterData[0];
+    const imageMasterMap = {};
+    masterData.slice(1).forEach(row => {
+        const filename = row[masterHeaders.indexOf("Filename")];
+        if (filename) {
+            imageMasterMap[filename] = {
+                ItemName: row[masterHeaders.indexOf("Name")] || filename,
+                ItemTypeShort: row[masterHeaders.indexOf("Type")] || 'unknown' // bg 或 char
+            };
+        }
+    });
+
+    // 3. 從 Wardrobe 讀取已解鎖的外觀，並加上當前裝備的，最後去重
+    const wardrobeData = wardrobeSheet.getDataRange().getValues();
+    const wardrobeHeaders = wardrobeData[0];
+    const filenameCol = wardrobeHeaders.indexOf("Filename");
+    if (filenameCol === -1) throw new Error("❌ 在 'Wardrobe' 工作表中找不到 'Filename' 欄位。");
+    const ownedFilenames = new Set(wardrobeData.slice(1).map(row => row[wardrobeHeaders.indexOf("Filename")]));
+    ownedFilenames.add(equippedItems.background);
+    ownedFilenames.add(equippedItems.character);
+
+    const ownedItems = Array.from(ownedFilenames).map(filename => {
+        const masterInfo = imageMasterMap[filename];
+        if (!masterInfo || !filename) return null; // ✅ 增加檢查，避免空檔名
+        const itemTypeLong = masterInfo.ItemTypeShort === 'bg' ? 'Background' : 'Character';
+        const assetUrl = `https://renewmiffy.github.io/mygame/img/${masterInfo.ItemTypeShort}/${filename}`;
+        return { ItemID: filename, ItemName: masterInfo.ItemName, ItemType: itemTypeLong, AssetUrl: assetUrl };
+    }).filter(item => item !== null); // 過濾掉在 ImageMaster 中找不到或檔名為空的項目
+
+    return { ownedItems, equippedItems };
+}
+/**
+ * [換裝系統] 更新玩家裝備中的外觀。
+ * @param {{background: string, character: string}} selection - 包含新背景和角色 ItemID 的物件。
+ */
+function updateEquippedItems(selection) {
+  if (!selection || !selection.background || !selection.character) {
+    throw new Error("❌ 傳入的選擇無效。");
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const profileSheet = ss.getSheetByName("Profile");
+  const headers = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+  
+  const bgCol = headers.indexOf('currentBackground') + 1;
+  const charCol = headers.indexOf('currentCharacter') + 1;
+
+  if (bgCol === 0 || charCol === 0) {
+    throw new Error("❌ 在 Profile 工作表中找不到 'currentBackground' 或 'currentCharacter' 欄位。");
+  }
+
+  profileSheet.getRange(2, bgCol).setValue(selection.background);
+  profileSheet.getRange(2, charCol).setValue(selection.character);
+
+  // ✅【問題1修正】強制將所有待處理的試算表操作完成，確保下次讀取時能拿到最新資料
+  SpreadsheetApp.flush();
 }
 
 /**
