@@ -1029,60 +1029,13 @@ google.script.run
         }
         document.getElementById('background').src = data.backgroundUrl || '';
         document.getElementById('character').src = data.characterUrl || '';
-        document.getElementById('playerName').innerText = data.playerName || '玩家';
-        document.getElementById('birthday').innerText = "生日: " + (data.birthday || '未設定');
-        
-        // ✅ 初始載入時，直接設定數值並儲存
-        currentDisplayValues = {
-            Coins: data.coins,
-            HonorPoints: data.honorPoints,
-            Cleanliness: data.cleanliness,
-            Mood: data.mood,
-            Energy: data.energy,
-            Health: data.health,
-            SelfDiscipline: data.selfDiscipline
-        };
-        document.getElementById('coins').innerText = formatAttr(data.coins);
-        document.getElementById('honorPoints').innerText = formatAttr(data.honorPoints);
 
-        const setAttr = (id, value) => {
-  const num = parseFloat(value);
-  document.getElementById(id).style.width = (!isNaN(num) ? num : 0) + "%";
-  document.getElementById(`${id}-label`).innerText = `${getAttrLabel(id)} ${formatAttr(num)}/100`;
-};
-
-        const getAttrLabel = (id) => ({
-        cleanliness: "清潔度",
-        mood: "心情",
-        energy: "精力",
-        health: "健康",
-        selfDiscipline: "自律"   // ✅ 最後一項不必加逗號，其他必須有
-})[id];
-
-        ['cleanliness', 'mood', 'energy', 'health', 'selfDiscipline'].forEach(id => setAttr(id, data[id]));
+        // ✅【核心修正】統一使用 updateUIWithProfileData 進行初始渲染
+        updateUIWithProfileData(data, 'initialLoad');
 
         if (!data.surveyFilledToday) {
           openSurveyModal();
         }
-        // ✅ 初始載入時，直接使用 getProfileData 回傳的資料更新側邊欄
-        if (data.StatusList) {
-          updateSidePanel(data);
-        } else {
-          refreshMainGameUI(); // 作為安全備用方案
-        }
-
-        // ✅ 新增：處理後端傳來的加成效果
-        if (data.effectsSummary) {
-          activeEffects = data.effectsSummary;
-          activeEffects.nextPurchaseDiscount = data.NextPurchaseDiscount || 0;
-          updateEffectsDisplay(activeEffects);
-        }
-
-        // ✅ 新增：更新信箱紅點提示
-        const badge = document.getElementById('mail-badge');
-        const unreadCount = data.unreadMailCount || 0;
-        badge.textContent = unreadCount;
-        badge.classList.toggle('hidden', unreadCount === 0);
       } else {
         showToast("⚠️ 資料為空，請稍後再試");
       }
@@ -1506,7 +1459,7 @@ function claimDailyTask(missionId) {
 
 function refreshMainGameUI(callback) {
   google.script.run
-    .withSuccessHandler(data => {
+    .withSuccessHandler(function(data) {
       console.log("🔄 refreshMainGameUI (getQuickStatus):", data);
       // ✅ 核心修正：更新角色圖片
       if (data.characterUrl) {
@@ -1577,16 +1530,17 @@ function updateHeaderBar(data) {
   honorEl.innerText = formatAttr(honorVal);
   currentDisplayValues.HonorPoints = honorVal;
 
+  // ✅【核心修正】將 fieldToIdMap 的鍵改為小寫，與後端回傳的資料一致
   const fieldToIdMap = {
-    Cleanliness: 'cleanliness',
-    Mood: 'mood',
-    Energy: 'energy',
-    Health: 'health',
-    SelfDiscipline: 'selfDiscipline',
+    cleanliness: 'cleanliness',
+    mood: 'mood',
+    energy: 'energy',
+    health: 'health',
+    selfDiscipline: 'selfDiscipline',
   };
 
   Object.entries(fieldToIdMap).forEach(([field, id]) => {
-    const num = Number(data[field]) || 0;
+    const num = Number(data[field]) || 0; // 現在 field 是小寫的 'cleanliness'，可以正確讀取 data.cleanliness
     const oldNum = Number(currentDisplayValues[field]) || 0;
     const diff = Math.round(num - oldNum);
 
@@ -2575,9 +2529,46 @@ function renderAchievementHistory(data) {
   function saveOutfit() {
     showToast('正在儲存您的新造型...', 2000);
     google.script.run
-      .withSuccessHandler(() => { showToast('✅ 造型已更新！'); refreshMainGameUI(); closeModal(document.getElementById('wardrobe-modal').querySelector('button')); })
+      .withSuccessHandler(function(newProfileData) {
+        showToast('✅ 造型已更新！');
+        // ✅【核心修正】直接使用後端回傳的最新資料更新UI，不再呼叫 refreshMainGameUI()
+        console.log("🔄 造型儲存成功，直接使用回傳資料更新UI:", newProfileData);
+        updateUIWithProfileData(newProfileData, 'saveOutfit');
+        closeModal(document.getElementById('wardrobe-modal').querySelector('button'));
+      })
       .withFailureHandler(err => { showToast(`❌ 儲存失敗：${err.message}`); })
       .updateEquippedItems(wardrobeSelection); // 假設後端有此函式
+  }
+
+  // ✅ 新增：統一的UI更新函式
+  function updateUIWithProfileData(data, source = 'Unknown') {
+    console.log(`🔄 [${source}] 正在使用新資料更新UI:`, data);
+
+    // 只有在初始載入時才需要設定玩家名稱和生日
+    if (source === 'initialLoad') {
+        document.getElementById('playerName').innerText = data.playerName || '玩家';
+        document.getElementById('birthday').innerText = "生日: " + (data.birthday || '未設定');
+    }
+
+    if (data.characterUrl) {
+        document.getElementById('character').src = data.characterUrl;
+    }
+    if (data.backgroundUrl) {
+        document.getElementById('background').src = data.backgroundUrl;
+    }
+    updateHeaderBar(data);
+    updateSidePanel(data);
+    if (data.effectsSummary) {
+        activeEffects = data.effectsSummary;
+        activeEffects.nextPurchaseDiscount = data.NextPurchaseDiscount || 0;
+        updateEffectsDisplay(activeEffects);
+    }
+    const badge = document.getElementById('mail-badge');
+    const unreadCount = data.unreadMailCount || 0;
+    if (badge) {
+        badge.textContent = unreadCount;
+        badge.classList.toggle('hidden', unreadCount === 0);
+    }
   }
 </script>
 

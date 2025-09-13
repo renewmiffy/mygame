@@ -2647,6 +2647,7 @@ function getWardrobeItems() {
 /**
  * [換裝系統] 更新玩家裝備中的外觀。
  * @param {{background: string, character: string}} selection - 包含新背景和角色 ItemID 的物件。
+ * @returns {object} - 返回最新的玩家狀態，與 getQuickStatus() 格式相同。
  */
 function updateEquippedItems(selection) {
   if (!selection || !selection.background || !selection.character) {
@@ -2667,8 +2668,11 @@ function updateEquippedItems(selection) {
   profileSheet.getRange(2, bgCol).setValue(selection.background);
   profileSheet.getRange(2, charCol).setValue(selection.character);
 
-  // ✅【問題1修正】強制將所有待處理的試算表操作完成，確保下次讀取時能拿到最新資料
+  // 強制將所有待處理的試算表操作完成。
   SpreadsheetApp.flush();
+
+  // ✅【核心修正】直接呼叫 getQuickStatus() 並回傳最新的資料，避免前端讀到舊資料。
+  return getQuickStatus();
 }
 
 /**
