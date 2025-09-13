@@ -1018,38 +1018,50 @@ body {
 
   // 頂層開始
 google.script.run
-  .withSuccessHandler(function(data) {
+  .withSuccessHandler(function(initialData) {
     try {
-      console.log('✅ getProfileData 回傳：', data);
+      console.log('✅ [Phase 1] getInitialProfile 回傳：', initialData);
 
-      if (data) {
-        // ✅ 檢查並印出後端傳來的偵錯日誌
-        if (data.debugLog && Array.isArray(data.debugLog)) {
-          console.groupCollapsed("📄 後端狀態評估日誌");
-          data.debugLog.forEach(log => console.log(log));
-          console.groupEnd();
-        }
-        document.getElementById('background').src = data.backgroundUrl || '';
-        document.getElementById('character').src = data.characterUrl || '';
+      if (initialData) {
+        // --- ✅【效能優化】第一階段：立即渲染核心畫面 ---
+        document.getElementById('background').src = `${initialData.bgBaseUrl}/${initialData.backgroundFilename}` || '';
+        document.getElementById('character').src = `${initialData.charBaseUrl}/${initialData.characterFilename}` || '';
 
         // ✅【核心修正】統一使用 updateUIWithProfileData 進行初始渲染
-        updateUIWithProfileData(data, 'initialLoad');
+        updateUIWithProfileData(initialData, 'initialLoad');
 
-        if (!data.surveyFilledToday) {
+        if (!initialData.surveyFilledToday) {
           openSurveyModal();
         }
 
         // ✅【核心修改】根據後端設定，動態更新所有圖示的路徑
-        if (data.iconBaseUrl) {
-            document.getElementById('icon-daily').src = `${data.iconBaseUrl}/daily.webp`;
-            document.getElementById('icon-study').src = `${data.iconBaseUrl}/study.webp`;
-            document.getElementById('icon-bag').src = `${data.iconBaseUrl}/bag.webp`;
-            document.getElementById('icon-shop').src = `${data.iconBaseUrl}/shop.webp`;
-            document.getElementById('icon-achievement').src = `${data.iconBaseUrl}/achievement.webp`;
-            document.getElementById('icon-mail').src = `${data.iconBaseUrl}/mail.webp`;
-            document.getElementById('icon-todo').src = `${data.iconBaseUrl}/todo.webp`;
-            document.getElementById('chest-animation-img').src = `${data.iconBaseUrl}/treasure.jpg`;
+        if (initialData.iconBaseUrl) {
+            document.getElementById('icon-daily').src = `${initialData.iconBaseUrl}/daily.webp`;
+            document.getElementById('icon-study').src = `${initialData.iconBaseUrl}/study.webp`;
+            document.getElementById('icon-bag').src = `${initialData.iconBaseUrl}/bag.webp`;
+            document.getElementById('icon-shop').src = `${initialData.iconBaseUrl}/shop.webp`;
+            document.getElementById('icon-achievement').src = `${initialData.iconBaseUrl}/achievement.webp`;
+            document.getElementById('icon-mail').src = `${initialData.iconBaseUrl}/mail.webp`;
+            document.getElementById('icon-todo').src = `${initialData.iconBaseUrl}/todo.webp`;
+            document.getElementById('chest-animation-img').src = `${initialData.iconBaseUrl}/treasure.jpg`;
         }
+
+        // --- ✅【效能優化】第二階段：非同步獲取次要資料 ---
+        google.script.run
+          .withSuccessHandler(function(secondaryData) {
+            console.log('✅ [Phase 2] getSecondaryData 回傳：', secondaryData);
+            // 將次要資料合併到主要資料中
+            const fullData = { ...initialData, ...secondaryData };
+            // 如果有狀態覆蓋圖片，則更新角色圖片
+            if (fullData.characterOverrideFile) {
+              document.getElementById('character').src = `${fullData.charBaseUrl}/${fullData.characterOverrideFile}`;
+            }
+            // 更新需要次要資料的 UI 元件
+            updateUIWithProfileData(fullData, 'secondaryLoad');
+          })
+          .withFailureHandler(err => console.error('❌ getSecondaryData 失敗:', err))
+          .getSecondaryData();
+
       } else {
         showToast("⚠️ 資料為空，請稍後再試");
       }
@@ -1062,10 +1074,10 @@ google.script.run
   })
   .withFailureHandler(function(error) {
 
-    console.error("❌ getProfileData() 錯誤：", error.message);
+    console.error("❌ getInitialProfile() 錯誤：", error.message);
     showToast("❌ 載入失敗：" + error.message);
   })
-  .getProfileData();
+  .getInitialProfile();
 
 
 
@@ -2567,7 +2579,7 @@ function renderAchievementHistory(data) {
   function updateUIWithProfileData(data, source = 'Unknown') {
     console.log(`🔄 [${source}] 正在使用新資料更新UI:`, data);
 
-    // 只有在初始載入時才需要設定玩家名稱和生日
+    // ✅ 修正：只有在初始載入時才需要設定玩家名稱和生日
     if (source === 'initialLoad') {
         document.getElementById('playerName').innerText = data.playerName || '玩家';
         document.getElementById('birthday').innerText = "生日: " + (data.birthday || '未設定');

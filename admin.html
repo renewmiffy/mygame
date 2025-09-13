@@ -5,15 +5,15 @@
     <base target="_top">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px; background-color: #f4f4f9; color: #333; font-size: 16px; }
-      .container { max-width: 700px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-      h1 { color: #4a4a4a; font-size: 1.5em; }
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px; background-color: #f4f4f9; color: #333; font-size: 18px; }
+      .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+      h1 { color: #4a4a4a; font-size: 2em; }
       #loading, #message { margin-top: 20px; font-weight: bold; padding: 10px; border-radius: 5px; text-align: center; }
       .item-list { list-style: none; padding: 0; }
       .item { background: #fff; border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
       .item-details { flex-grow: 1; }
-      .item-details strong { font-size: 1.1em; color: #333; }
-      .item-details span { font-size: 0.9em; color: #666; display: block; margin-top: 4px; } 
+      .item-details strong { font-size: 1.3em; color: #333; }
+      .item-details span { font-size: 1.1em; color: #666; display: block; margin-top: 5px; } 
       /* ✅ 新增：管理後台用的紅點樣式 */
       .admin-badge {
         display: inline-block;
@@ -24,17 +24,17 @@
         border-radius: 10px;
         margin-left: 10px;
       }
-      .verify-btn { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.9em; font-weight: bold; background-color: #007bff; color: white; text-decoration: none; text-align: center; }
+      .verify-btn { padding: 15px 22px; border: none; border-radius: 8px; cursor: pointer; font-size: 1.1em; font-weight: bold; background-color: #007bff; color: white; text-decoration: none; text-align: center; }
       
       /* 新增的表單樣式 */
       .form-group { margin-bottom: 15px; }
-      label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+      label { display: block; margin-bottom: 8px; font-weight: bold; font-size: 1.1em; }
       input[type="text"], input[type="number"], textarea {
         width: 100%;
-        padding: 10px;
+        padding: 15px;
         border: 1px solid #ccc;
         border-radius: 4px;
-        font-size: 1em;
+        font-size: 1.1em;
         box-sizing: border-box; /* 確保 padding 不會讓寬度超標 */
       }
       textarea { font-family: Consolas, "Courier New", monospace; }
@@ -44,7 +44,7 @@
         border: none;
         border-radius: 5px;
         cursor: pointer;
-        font-size: 1.1em;
+        font-size: 1.2em;
         font-weight: bold;
         background-color: #28a745; /* Green */
         color: white;
@@ -53,28 +53,28 @@
 
       /* 獎勵產生器樣式 */
       .reward-builder { border: 1px solid #ddd; padding: 10px 15px; margin-top: 10px; border-radius: 4px; }
-      .reward-builder legend { font-weight: bold; font-size: 0.9em; padding: 0 5px; color: #555; }
+      .reward-builder legend { font-weight: bold; font-size: 1em; padding: 0 5px; color: #555; }
       .reward-row, .add-item-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
       .reward-row label { flex-basis: 100px; text-align: right; margin-bottom: 0; }
       .add-item-row { margin-top: 15px; }
-      #item-selector { flex-grow: 1; padding: 8px; }
+      #item-selector { flex-grow: 1; padding: 12px; font-size: 1em; }
       #item-quantity { width: 80px; text-align: center; }
-      #add-item-btn { background-color: #17a2b8; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+      #add-item-btn { background-color: #17a2b8; color: white; border: none; padding: 15px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 1em; }
       .added-item { display: flex; justify-content: space-between; align-items: center; background: #e9ecef; padding: 5px 10px; border-radius: 4px; margin-bottom: 5px; font-size: 0.9em; }
       .remove-item-btn { background: #6c757d; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-weight: bold; line-height: 22px; text-align: center; }
     </style>
     <!-- ✅ 新增：Modal 樣式 -->
     <style>
       .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 100; display: none; align-items: center; justify-content: center; }
-      .modal-content { background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; position: relative; }
+      .modal-content { background: white; padding: 25px; border-radius: 8px; width: 95%; max-width: 700px; max-height: 90vh; overflow-y: auto; position: relative; }
       .modal-close-btn { position: absolute; top: 10px; right: 15px; font-size: 1.5em; cursor: pointer; border: none; background: none; }
-      .modal-actions { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
-      .modal-actions button { padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; font-weight: bold; }
+      .modal-actions { margin-top: 25px; display: flex; gap: 15px; justify-content: flex-end; }
+      .modal-actions button { padding: 15px 25px; border: none; border-radius: 8px; cursor: pointer; font-size: 1.1em; font-weight: bold; }
       .modal-approve-btn { background-color: #28a745; color: white; }
       .modal-reject-btn { background-color: #dc3545; color: white; }
-      .modal-details { border-left: 4px solid #ccc; padding-left: 15px; margin: 20px 0; }
+      .modal-details { border-left: 4px solid #ccc; padding-left: 15px; margin: 20px 0; font-size: 1.1em; }
       .modal-details p { margin: 8px 0; }
-      .modal-description { background: #f8f9fa; padding: 15px; border-radius: 5px; white-space: pre-wrap; font-size: 0.9em; max-height: 200px; overflow-y: auto; }
+      .modal-description { background: #f8f9fa; padding: 15px; border-radius: 5px; white-space: pre-wrap; font-size: 1em; max-height: 200px; overflow-y: auto; }
       .modal-message { margin-top: 20px; font-weight: bold; padding: 10px; border-radius: 5px; text-align: center; }
     </style>
   </head>
@@ -172,7 +172,7 @@
               <legend>道具</legend>
               <div id="ach-reward-items-list"></div>
               <div class="add-item-row">
-                <select id="ach-item-selector"><option value="">載入中...</option></select>
+                <select id="ach-item-selector" style="padding: 12px; font-size: 1em;"><option value="">載入中...</option></select>
                 <input type="number" id="ach-item-quantity" min="1" value="1" placeholder="數量">
                 <button type="button" id="ach-add-item-btn">＋ 新增道具</button>
               </div>
@@ -310,8 +310,9 @@
             mailSelector.innerHTML = '<option value="">-- 請選擇道具 --</option>';
             achSelector.innerHTML = '<option value="">-- 請選擇道具 --</option>';
 
-            options.items.forEach(item => {
-              const optionHtml = `<option value="${item.id}">${item.name}</option>`;
+            options.items.forEach(item => { 
+              const rarityText = item.rarity > 0 ? `(★${item.rarity}) ` : '';
+              const optionHtml = `<option value="${item.id}">${rarityText}${item.name}</option>`;
               mailSelector.innerHTML += optionHtml;
               achSelector.innerHTML += optionHtml;
             });

@@ -45,10 +45,10 @@ function doGet(e) {
   // 預設回傳遊戲主頁
   return HtmlService.createHtmlOutputFromFile('index').setTitle(config.WEBSITE_TITLE).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
-function getProfileData() {
+function getInitialProfile() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName('Profile');
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];  
   
   // --- 1. 檢查是否需要執行每日結算 (方便測試) ---
   let profileRow = sheet.getRange(2, 1, 1, headers.length).getValues()[0];
@@ -69,10 +69,10 @@ function getProfileData() {
     Logger.log(`[getProfileData] 每日結算執行完畢，已重新讀取資料。`);
   }
 
-  // --- 2. 處理並回傳最新的玩家資料 ---
+  // --- 2. 處理並回傳最核心的玩家資料 ---
   const profile = {};
   headers.forEach((key, i) => profile[key] = profileRow[i]);
-
+  
   const birthdayFormatted = (profile.birthday instanceof Date)
     ? Utilities.formatDate(profile.birthday, Session.getScriptTimeZone(), "yyyy/MM/dd")
     : (profile.birthday || '');
@@ -81,33 +81,6 @@ function getProfileData() {
     ? Utilities.formatDate(profile.LastSurveyDate, Session.getScriptTimeZone(), "yyyy/MM/dd")
     : (profile.LastSurveyDate || '');
   const surveyFilledToday = (lastSurveyDateFormatted === todayStr);
-
-  // --- 3. 狀態圖片更換邏輯 ---
-  const activeStatuses = evaluateStatusRules(profile);
-  Logger.log(`[getProfileData] 評估出的生效狀態: ${JSON.stringify(activeStatuses)}`); // ✅ 新增偵錯日誌
-  const overrideStatus = activeStatuses
-    .filter(s => s.CharacterOverrideFile)
-    .sort((a, b) => (a.Priority || 999) - (b.Priority || 999))[0];
-
-  let finalCharacterFile = profile.currentCharacter;
-  if (overrideStatus) {
-    finalCharacterFile = overrideStatus.CharacterOverrideFile;
-    Logger.log(`狀態圖片覆蓋：因 [${overrideStatus.狀態名稱}]，角色圖片更換為 ${finalCharacterFile}`);
-  }
-
-  // ✅ 新增：將狀態列表也一併回傳
-  const statusList = activeStatuses.map(status => ({
-    StatusName: status.狀態名稱,
-    Effect: status.效果說明
-  }));
-
-  // ✅ 新增：讀取並回傳當前生效的 Buff
-  const activeBuffs = getActiveBuffs();
-  const buffList = activeBuffs.map(b => ({ BuffName: b.BuffName, ExpiryDate: b.ExpiryDate.toISOString() }));
-
-  // ✅ 新增：計算並回傳加成效果總結
-  const effectsSummary = calculateEffectsSummary(activeStatuses);
-  Logger.log(`[getProfileData] 計算出的效果總結: ${JSON.stringify(effectsSummary)}`);
 
   return {
     playerName: profile.PlayerName,
@@ -119,15 +92,38 @@ function getProfileData() {
     energy: profile.Energy,
     health: profile.Health,
     selfDiscipline: profile.SelfDiscipline,
-    backgroundUrl: `${getConfig().BG_IMAGE_URL}/${profile.currentBackground}`,
-    characterUrl: `${getConfig().CHAR_IMAGE_URL}/${finalCharacterFile}`,
+    // ✅【效能優化】只回傳檔名，由前端組合 URL
+    backgroundFilename: profile.currentBackground,
+    characterFilename: profile.currentCharacter,
     iconBaseUrl: getConfig().ICON_IMAGE_URL, // ✅ 新增：將圖示路徑也傳給前端
     surveyFilledToday: surveyFilledToday,
-    debugLog: activeStatuses.debugLog, // ✅ 將偵錯日誌一起回傳
-    StatusList: statusList, // ✅ 新增
-    effectsSummary: effectsSummary, // ✅ 新增
-    BuffList: buffList, // ✅ 新增
-    unreadMailCount: getUnreadMailCount() // ✅ 新增：回傳未讀郵件數量
+    // ✅【效能優化】將圖片基礎路徑傳給前端
+    bgBaseUrl: getConfig().BG_IMAGE_URL,
+    charBaseUrl: getConfig().CHAR_IMAGE_URL
+  };
+}
+
+/**
+ * [效能優化] 非同步獲取次要資料，例如狀態、Buff、郵件數等。
+ */
+function getSecondaryData() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const profileSheet = ss.getSheetByName('Profile');
+  const profileRow = profileSheet.getRange(2, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
+  const profile = {};
+  profileHeaders.forEach((key, i) => profile[key] = profileRow[i]);
+
+  const activeStatuses = evaluateStatusRules(profile);
+  const effectsSummary = calculateEffectsSummary(activeStatuses);
+  const statusList = activeStatuses.map(s => ({ StatusName: s.狀態名稱, Effect: s.效果說明 }));
+  const overrideStatus = activeStatuses.filter(s => s.CharacterOverrideFile).sort((a, b) => (a.Priority || 999) - (b.Priority || 999))[0];
+
+  return {
+    StatusList: statusList,
+    effectsSummary: effectsSummary,
+    characterOverrideFile: overrideStatus ? overrideStatus.CharacterOverrideFile : null,
+    unreadMailCount: getUnreadMailCount()
   };
 }
 function getSurveyQuestions() {
@@ -1413,7 +1409,6 @@ function getPendingRedemptions() {
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   const statusCol = headers.indexOf('Status');
-
   if (statusCol === -1) return [];
 
   return data
@@ -1422,7 +1417,7 @@ function getPendingRedemptions() {
     .map(row => {
       const item = {};
       headers.forEach((h, i) => {
-        if ((h === 'RequestDate') && row[i] instanceof Date) {
+        if ((h === 'RequestDate' || h === 'ProcessDate') && row[i] instanceof Date) {
           item[h] = row[i].toISOString();
         } else {
           item[h] = row[i];
@@ -2215,11 +2210,18 @@ function getAdminRewardOptions() {
   const headers = data[0];
   const itemIDCol = headers.indexOf("ItemID");
   const itemNameCol = headers.indexOf("ItemName");
+  const rarityCol = headers.indexOf("Rarity"); // ✅ 新增：讀取稀有度欄位
 
   const items = data.slice(1).map(row => ({
     id: row[itemIDCol],
-    name: row[itemNameCol] || row[itemIDCol]
-  })).sort((a, b) => a.name.localeCompare(b.name)); // 按名稱字母排序
+    name: row[itemNameCol] || row[itemIDCol],
+    rarity: row[rarityCol] || 0 // ✅ 新增：將稀有度加入回傳物件
+  })).sort((a, b) => {
+    const rarityB = parseInt(b.rarity) || 0;
+    const rarityA = parseInt(a.rarity) || 0;
+    if (rarityA !== rarityB) return rarityA - rarityB; // 稀有度低的排前面
+    return a.name.localeCompare(b.name); // 稀有度相同時，按名稱排序
+  });
 
   let pendingAchievementsCount = 0;
   if (achievementSheet && achievementSheet.getLastRow() > 1) {
