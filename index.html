@@ -838,6 +838,8 @@ body {
 .rarity-3 { border-color: #a0522d; background-color: #f5e8dd; } /* 3★ */
 .rarity-4 { border-color: #ffd700; background-color: #fffacd; } /* 4★ */
 .rarity-5 { border-color: #ff4500; background: linear-gradient(145deg, #ffefba, #ffffff); } /* 5★ */
+.rarity-new-appearance { border-color: #00bfff; background: linear-gradient(145deg, #e0ffff, #ffffff); } /* 新外觀 */
+.rarity-duplicate { border-color: #8a2be2; background-color: #f0e6ff; } /* 重複外觀 */
 .rarity-currency { border-color: #4CAF50; background-color: #e8f5e9; } /* 貨幣 */
 </style>
 
@@ -2138,8 +2140,13 @@ function renderTenPullResults(results) {
     if (item.type === 'currency') {
       const icon = item.rewardID === 'HonorPoints' ? '⭐' : '💰';
       card.innerHTML = `<div>${icon} +${item.quantity}</div><div>${item.itemName}</div>`;
+    } else if (item.type === 'duplicate_appearance') {
+      // ✅【核心修改】處理重複外觀的顯示
+      card.innerHTML = `<div>🔄</div><div>${item.itemName}</div><div style="font-size: 0.8em; color: #666;">(重複)</div>`;
     } else {
-      card.innerHTML = `<div>${item.rarity}★</div><div>${item.itemName}</div>`;
+      // ✅ 修正：根據稀有度顯示不同內容
+      const rarityText = item.rarity === 'new-appearance' ? '✨NEW' : `${item.rarity}★`;
+      card.innerHTML = `<div>${rarityText}</div><div>${item.itemName}</div>`;
     }
 
     grid.appendChild(card);
