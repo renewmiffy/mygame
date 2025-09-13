@@ -1,16 +1,49 @@
-const SPREADSHEET_ID = '1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs';
+/**
+ * [核心設定] 取得專案的設定值。
+ * 優先從 Script Properties 讀取，若無則使用預設值。
+ * 這樣可以讓每個玩家的專案副本都有自己獨立的設定，而不用修改程式碼。
+ */
+let _CONFIG = null; // 快取設定，避免重複讀取
+function getConfig() {
+  if (_CONFIG) {
+    return _CONFIG;
+  }
+
+  const properties = PropertiesService.getScriptProperties();
+  _CONFIG = {
+    // 從指令碼屬性讀取 SPREADSHEET_ID，如果沒有，就用一個預設值 (方便開發)
+    SPREADSHEET_ID: properties.getProperty('SPREADSHEET_ID') || '1OSkHqIGwq4xYEndtsrTk4Sc_EldHDeZIbvSg5L6djFs',
+
+    // ✅ 新增：網站標題設定
+    WEBSITE_TITLE: properties.getProperty('WEBSITE_TITLE') || '我的遊戲',
+
+    // ✅【核心修改】將圖片路徑完全分開管理
+    BG_IMAGE_URL: properties.getProperty('BG_IMAGE_URL') || 'https://renewmiffy.github.io/mygame/img/bg',
+    CHAR_IMAGE_URL: properties.getProperty('CHAR_IMAGE_URL') || 'https://renewmiffy.github.io/mygame/img/char',
+    ICON_IMAGE_URL: properties.getProperty('ICON_IMAGE_URL') || 'https://renewmiffy.github.io/mygame/img/icons'
+  };
+
+  // 在日誌中印出當前使用的設定，方便偵錯
+  Logger.log(`[Config] SPREADSHEET_ID: ${_CONFIG.SPREADSHEET_ID}`);
+  Logger.log(`[Config] WEBSITE_TITLE: ${_CONFIG.WEBSITE_TITLE}`);
+
+  return _CONFIG;
+}
+
+const SPREADSHEET_ID = getConfig().SPREADSHEET_ID;
 
 // ✅ 日期欄位一定要判斷是否為 Date 並轉為 "yyyy/MM/dd" 格式再進行比較
 // 否則會導致 == 比對失敗、條件永遠不成立 顯示用途也要處理日期格式，避免出現 GMT/UTC 雜訊。
 function doGet(e) { 
+  const config = getConfig(); // ✅ 取得設定
   // ✅ 新增：提供一個頁面來查看所有待核銷的項目
   if (e.parameter.page === 'admin') {
     // ✅ 修正：admin.html 不需要樣板語法，直接輸出即可
-    return HtmlService.createHtmlOutputFromFile('admin').setTitle('管理後台').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    return HtmlService.createHtmlOutputFromFile('admin').setTitle(`${config.WEBSITE_TITLE} - 管理後台`).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
   // 預設回傳遊戲主頁
-  return HtmlService.createHtmlOutputFromFile('index').setTitle('我的遊戲').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  return HtmlService.createHtmlOutputFromFile('index').setTitle(config.WEBSITE_TITLE).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 function getProfileData() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -85,9 +118,10 @@ function getProfileData() {
     mood: profile.Mood,
     energy: profile.Energy,
     health: profile.Health,
-    selfDiscipline: profile.SelfDiscipline, 
-    backgroundUrl: "https://renewmiffy.github.io/mygame/img/bg/" + profile.currentBackground,
-    characterUrl: "https://renewmiffy.github.io/mygame/img/char/" + finalCharacterFile,
+    selfDiscipline: profile.SelfDiscipline,
+    backgroundUrl: `${getConfig().BG_IMAGE_URL}/${profile.currentBackground}`,
+    characterUrl: `${getConfig().CHAR_IMAGE_URL}/${finalCharacterFile}`,
+    iconBaseUrl: getConfig().ICON_IMAGE_URL, // ✅ 新增：將圖示路徑也傳給前端
     surveyFilledToday: surveyFilledToday,
     debugLog: activeStatuses.debugLog, // ✅ 將偵錯日誌一起回傳
     StatusList: statusList, // ✅ 新增
@@ -829,9 +863,9 @@ function getQuickStatus() {
     health: profile.Health || 0,
     selfDiscipline: profile.SelfDiscipline || 0,
     StatusList: statusList,
-    // ✅ 修正：同時回傳背景和角色圖片 URL
-    backgroundUrl: "https://renewmiffy.github.io/mygame/img/bg/" + profile.currentBackground,
-    characterUrl: "https://renewmiffy.github.io/mygame/img/char/" + finalCharacterFile,
+    // ✅ 修正：使用設定檔中的 URL
+    backgroundUrl: `${getConfig().BG_IMAGE_URL}/${profile.currentBackground}`,
+    characterUrl: `${getConfig().CHAR_IMAGE_URL}/${finalCharacterFile}`,
     effectsSummary: effectsSummary,
     unreadMailCount: getUnreadMailCount() // ✅ 新增：刷新時也回傳未讀郵件數
   };
@@ -2568,7 +2602,7 @@ function getAdminRewardOptions() {
 
 /**
  * [換裝系統] 取得玩家擁有的所有外觀，以及當前裝備的外觀。
- * @returns {{ownedItems: Array<object>, equippedItems: {background: string, character: string}}}
+ * @returns {{ownedItems: Array<object>, equippedItems: {background: string, character: string}, counts: object}}
  */
 function getWardrobeItems() {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -2592,6 +2626,8 @@ function getWardrobeItems() {
     const masterData = imageMasterSheet.getDataRange().getValues();
     const masterHeaders = masterData[0];
     const imageMasterMap = {};
+    // ✅ 新增：初始化總數計數器
+    const totalCounts = { background: 0, character: 0 };
     masterData.slice(1).forEach(row => {
         const filename = row[masterHeaders.indexOf("Filename")];
         if (filename) {
@@ -2599,6 +2635,12 @@ function getWardrobeItems() {
                 ItemName: row[masterHeaders.indexOf("Name")] || filename,
                 ItemTypeShort: row[masterHeaders.indexOf("Type")] || 'unknown' // bg 或 char
             };
+            // ✅ 新增：累加總數
+            if (imageMasterMap[filename].ItemTypeShort === 'bg') {
+                totalCounts.background++;
+            } else if (imageMasterMap[filename].ItemTypeShort === 'char') {
+                totalCounts.character++;
+            }
         }
     });
 
@@ -2611,15 +2653,36 @@ function getWardrobeItems() {
     ownedFilenames.add(equippedItems.background);
     ownedFilenames.add(equippedItems.character);
 
+    // ✅ 新增：計算已擁有的各類別數量
+    const ownedCounts = { background: 0, character: 0 };
+    ownedFilenames.forEach(filename => {
+        if (imageMasterMap[filename]?.ItemTypeShort === 'bg') ownedCounts.background++;
+        else if (imageMasterMap[filename]?.ItemTypeShort === 'char') ownedCounts.character++;
+    });
     const ownedItems = Array.from(ownedFilenames).map(filename => {
         const masterInfo = imageMasterMap[filename];
         if (!masterInfo || !filename) return null; // ✅ 增加檢查，避免空檔名
+
+        // ✅【核心修改】將背景和角色的網址產生邏輯分開
+        let assetUrl = '';
+        if (masterInfo.ItemTypeShort === 'bg') {
+            assetUrl = `${getConfig().BG_IMAGE_URL}/${filename}`;
+        } else if (masterInfo.ItemTypeShort === 'char') {
+            // 您可以在此處為不同玩家或情況設定不同的角色資料夾路徑
+            assetUrl = `${getConfig().CHAR_IMAGE_URL}/${filename}`;
+        }
+
         const itemTypeLong = masterInfo.ItemTypeShort === 'bg' ? 'Background' : 'Character';
-        const assetUrl = `https://renewmiffy.github.io/mygame/img/${masterInfo.ItemTypeShort}/${filename}`;
         return { ItemID: filename, ItemName: masterInfo.ItemName, ItemType: itemTypeLong, AssetUrl: assetUrl };
     }).filter(item => item !== null); // 過濾掉在 ImageMaster 中找不到或檔名為空的項目
 
-    return { ownedItems, equippedItems };
+    // ✅ 新增：組合最終的計數物件
+    const counts = {
+        background: { owned: ownedCounts.background, total: totalCounts.background },
+        character: { owned: ownedCounts.character, total: totalCounts.character }
+    };
+
+    return { ownedItems, equippedItems, counts };
 }
 /**
  * [換裝系統] 更新玩家裝備中的外觀。

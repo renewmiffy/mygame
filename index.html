@@ -466,26 +466,26 @@ body {
 </div>
 
 <div class="bottom-bar">
-<div class="bottom-item" onclick="openDailyModal()">
-  <img src="https://renewmiffy.github.io/mygame/img/icons/daily.webp" alt="日常">
-</div>
-  <div class="bottom-item" onclick="openStudy()"> <!-- 你之後的學習功能 -->
-    <img src="https://renewmiffy.github.io/mygame/img/icons/study.webp" alt="學習">
+  <div class="bottom-item" onclick="openDailyModal()">
+    <img id="icon-daily" src="" alt="日常">
   </div>
-  <div class="bottom-item" onclick="openBag()"> <!-- 尚未實作 -->
-    <img src="https://renewmiffy.github.io/mygame/img/icons/bag.webp" alt="背包">
+  <div class="bottom-item" onclick="openStudy()">
+    <img id="icon-study" src="" alt="學習">
   </div>
-  <div class="bottom-item" onclick="openShop()"> <!-- 尚未實作 -->
-    <img src="https://renewmiffy.github.io/mygame/img/icons/shop.webp" alt="商店">
+  <div class="bottom-item" onclick="openBag()">
+    <img id="icon-bag" src="" alt="背包">
+  </div>
+  <div class="bottom-item" onclick="openShop()">
+    <img id="icon-shop" src="" alt="商店">
   </div>
   <div class="bottom-item" onclick="openAchievementModal()">
-    <img src="https://renewmiffy.github.io/mygame/img/icons/achievement.webp" alt="成就">
+    <img id="icon-achievement" src="" alt="成就">
   </div>
   <div class="bottom-item" onclick="openMailbox()">
-    <img src="https://renewmiffy.github.io/mygame/img/icons/mail.webp" alt="信箱"><span id="mail-badge" class="badge hidden"></span>
+    <img id="icon-mail" src="" alt="信箱"><span id="mail-badge" class="badge hidden"></span>
   </div>
-  <div class="bottom-item" onclick="openMissionModal()"> <!-- ✅ 修正後 -->
-    <img src="https://renewmiffy.github.io/mygame/img/icons/todo.webp" alt="任務">
+  <div class="bottom-item" onclick="openMissionModal()">
+    <img id="icon-todo" src="" alt="任務">
   </div>
 </div>
 
@@ -913,7 +913,7 @@ body {
 
 <!-- ✅ 開寶箱動畫 Modal -->
 <div id="chest-opening-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 1000;">
-  <img id="chest-animation-img" src="https://renewmiffy.github.io/mygame/img/icons/treasure.jpg" style="height: 250px; width: auto; border-radius: 20px; box-shadow: 0 0 30px #ffd700;">
+  <img id="chest-animation-img" src="" style="height: 250px; width: auto; border-radius: 20px; box-shadow: 0 0 30px #ffd700;">
   <div id="chest-opening-text" style="margin-top: 20px; color: white; font-size: 1.8em; font-weight: bold; text-shadow: 2px 2px 4px #000;">正在開啟...</div>
 </div>
 
@@ -1037,6 +1037,18 @@ google.script.run
 
         if (!data.surveyFilledToday) {
           openSurveyModal();
+        }
+
+        // ✅【核心修改】根據後端設定，動態更新所有圖示的路徑
+        if (data.iconBaseUrl) {
+            document.getElementById('icon-daily').src = `${data.iconBaseUrl}/daily.webp`;
+            document.getElementById('icon-study').src = `${data.iconBaseUrl}/study.webp`;
+            document.getElementById('icon-bag').src = `${data.iconBaseUrl}/bag.webp`;
+            document.getElementById('icon-shop').src = `${data.iconBaseUrl}/shop.webp`;
+            document.getElementById('icon-achievement').src = `${data.iconBaseUrl}/achievement.webp`;
+            document.getElementById('icon-mail').src = `${data.iconBaseUrl}/mail.webp`;
+            document.getElementById('icon-todo').src = `${data.iconBaseUrl}/todo.webp`;
+            document.getElementById('chest-animation-img').src = `${data.iconBaseUrl}/treasure.jpg`;
         }
       } else {
         showToast("⚠️ 資料為空，請稍後再試");
@@ -2469,7 +2481,7 @@ function renderAchievementHistory(data) {
   }
 
   function renderWardrobe(data) {
-    const { ownedItems, equippedItems } = data;
+    const { ownedItems, equippedItems, counts } = data;
     const selectionContainer = document.getElementById('wardrobe-selection');
     selectionContainer.innerHTML = '';
 
@@ -2504,7 +2516,10 @@ function renderAchievementHistory(data) {
 
       return `
         <div class="wardrobe-category" id="wardrobe-category-${type.toLowerCase()}">
-          <h4>${title}</h4>
+          <h4>
+            ${title}
+            <span style="font-weight: normal; font-size: 0.9em; color: #666;">(已擁有 ${counts[type.toLowerCase()].owned} / ${counts[type.toLowerCase()].total})</span>
+          </h4>
           <div class="wardrobe-item-grid">${itemsHtml}</div>
         </div>
       `;
