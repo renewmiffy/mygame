@@ -1535,6 +1535,9 @@ function applyEndOfDayUpdates() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const profileSheet = ss.getSheetByName("Profile");
   const rulesSheet = ss.getSheetByName("GameRules");
+  // ✅ 新增：讀取日常和學習工作表
+  const taskSheet = ss.getSheetByName("DailyTasks");
+  const skillSheet = ss.getSheetByName("SkillMaster");
 
   // --- 讀取玩家資料 ---
   const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
@@ -1655,6 +1658,30 @@ function applyEndOfDayUpdates() {
   } catch (e) {
     Logger.log("處理未完成任務懲罰失敗: " + e.message);
   }
+
+  // --- ✅【新功能】處理昨日無活動懲罰 ---
+  try {
+    const yesterdayStr = formatYMD(new Date(new Date().getTime() - 86400000));
+    let wasActiveYesterday = false;
+
+    // ✅【核心修改】只檢查學習紀錄
+    if (skillSheet && skillSheet.getLastRow() > 1) {
+      const skillData = skillSheet.getDataRange().getValues();
+      const lastDoneCol = skillData[0].indexOf("LastDoneDate");
+      if (skillData.slice(1).some(row => formatYMD(row[lastDoneCol]) === yesterdayStr)) {
+        wasActiveYesterday = true;
+      }
+    }
+
+    // 如果昨天完全沒有活動，則套用懲罰
+    if (!wasActiveYesterday) {
+      const inactivityPenalty = parseFloat(rulesData.find(row => row[0] === 'Penalty_Inactivity_SelfDiscipline')?.[1] || 0);
+      if (inactivityPenalty < 0) {
+        profile.SelfDiscipline = (parseFloat(profile.SelfDiscipline) || 0) + inactivityPenalty;
+        Logger.log(`[每日結算] 昨日無任何學習活動，自律 ${inactivityPenalty}`);
+      }
+    }
+  } catch (e) { Logger.log(`處理昨日無活動懲罰時出錯: ${e.message}`); }
 
   // --- 6. 寫回 Profile ---
   profile.LastUpdateDate = new Date(); // 記錄更新日期
