@@ -569,61 +569,57 @@ function formatYMD(value) {
 }
 
 function doDailyTask(taskId) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const taskSheet = ss.getSheetByName("DailyTasks");
-  const profileSheet = ss.getSheetByName("Profile");
-  const logSheet = ss.getSheetByName("PlayerLog");
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const taskSheet = ss.getSheetByName("DailyTasks");
+    const profileSheet = ss.getSheetByName("Profile");
 
-  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
+    // --- ✅【效能優化】一次性讀取所有需要的資料 ---
+    const taskData = taskSheet.getDataRange().getValues();
+    const taskHeaders = taskData[0];
+    const taskRows = taskData.slice(1);
 
-  const taskData = taskSheet.getDataRange().getValues();
-  const taskHeaders = taskData[0];
-  const taskRows = taskData.slice(1);
-  const taskIndex = taskRows.findIndex(r => r[0] === taskId);
-  if (taskIndex === -1) throw new Error("❌ 找不到此任務");
+    const profileData = profileSheet.getDataRange().getValues();
+    const profileHeaders = profileData[0];
+    const profileRow = profileData[1];
+    const profile = {};
+    profileHeaders.forEach((key, i) => profile[key] = profileRow[i]);
 
-  const taskRow = taskRows[taskIndex];
-  const getTaskField = (field) => taskRow[taskHeaders.indexOf(field)];
-  const lastDate = getTaskField("LastDoneDate");
+    // --- 執行任務邏輯 ---
+    const taskIndex = taskRows.findIndex(r => r[0] === taskId);
+    if (taskIndex === -1) throw new Error("❌ 找不到此任務");
 
-  if (lastDate instanceof Date && Utilities.formatDate(lastDate, Session.getScriptTimeZone(), "yyyy/MM/dd") === todayStr) {
-    throw new Error("⚠️ 此任務今日已完成");
-  }
+    const taskRowToUpdate = taskRows[taskIndex];
+    const lastDoneDateCol = taskHeaders.indexOf("LastDoneDate");
+    const streakCol = taskHeaders.indexOf("StreakCount");
+    const totalCol = taskHeaders.indexOf("TotalDoneCount");
+    const effectsCol = taskHeaders.indexOf("Effects");
+    const nameCol = taskHeaders.indexOf("任務名稱");
 
-  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-  const profile = {};
-  profileHeaders.forEach((key, i) => profile[key] = profileRow[i]);
- 
-  const effects = JSON.parse(getTaskField("Effects"));
-  const taskName = getTaskField("任務名稱") || "未知任務";
-  // ✅ 修正：使用統一的獎勵處理函式，以套用加成/折扣
-  const rewardResult = applyRewards(profile, effects, "日常任務 - " + taskName);
+    const lastDate = taskRowToUpdate[lastDoneDateCol];
+    const todayStr = formatYMD(new Date());
+    if (lastDate instanceof Date && formatYMD(lastDate) === todayStr) {
+        throw new Error("⚠️ 此任務今日已完成");
+    }
 
-  const today = new Date();
-  const taskRowIndex = taskIndex + 2;
-  const lastDoneDateCell = taskSheet.getRange(taskRowIndex, taskHeaders.indexOf("LastDoneDate") + 1);
-  const streakCell = taskSheet.getRange(taskRowIndex, taskHeaders.indexOf("StreakCount") + 1);
-  const totalCell = taskSheet.getRange(taskRowIndex, taskHeaders.indexOf("TotalDoneCount") + 1);
+    const effects = JSON.parse(taskRowToUpdate[effectsCol] || "{}");
+    const taskName = taskRowToUpdate[nameCol] || "未知任務";
+    const rewardResult = applyRewards(profile, effects, "日常任務 - " + taskName);
 
-  const yesterdayStr = Utilities.formatDate(new Date(today.getTime() - 86400000), Session.getScriptTimeZone(), "yyyy/MM/dd");
-  const lastDateStr = (lastDate instanceof Date)
-    ? Utilities.formatDate(lastDate, Session.getScriptTimeZone(), "yyyy/MM/dd")
-    : "";
+    const lastDateStr = (lastDate instanceof Date) ? formatYMD(lastDate) : "";
+    const yesterdayStr = formatYMD(new Date(new Date().getTime() - 86400000));
+    const currentStreak = parseInt(taskRowToUpdate[streakCol] || 0);
 
-  const streakCount = parseInt(getTaskField("StreakCount") || 0);
-  const totalCount = parseInt(getTaskField("TotalDoneCount") || 0);
+    taskRowToUpdate[lastDoneDateCol] = new Date();
+    taskRowToUpdate[streakCol] = (lastDateStr === yesterdayStr) ? currentStreak + 1 : 1;
+    taskRowToUpdate[totalCol] = (parseInt(taskRowToUpdate[totalCol] || 0)) + 1;
 
-  const newStreak = (lastDateStr === yesterdayStr) ? streakCount + 1 : 1;
-  lastDoneDateCell.setValue(today);
-  streakCell.setValue(newStreak);
-  totalCell.setValue(totalCount + 1);
+    // --- ✅【效能優化】一次性寫回更新後的任務資料 ---
+    taskSheet.getRange(taskIndex + 2, 1, 1, taskHeaders.length).setValues([taskRowToUpdate]);
 
-  // ✅ 新增：回傳包含懲罰資訊的物件
-  return {
-    message: `✅ ${taskName} 完成！`,
-    penaltyInfo: rewardResult.penaltyInfo
-  };
+    return {
+        message: `✅ ${taskName} 完成！`,
+        penaltyInfo: rewardResult.penaltyInfo
+    };
 }
 
 
@@ -654,59 +650,53 @@ function getDailyTaskList() {
   });
 }
 function doLearning(skillId) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const skillSheet = ss.getSheetByName("SkillMaster");
-  const profileSheet = ss.getSheetByName("Profile");
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const skillSheet = ss.getSheetByName("SkillMaster");
+    const profileSheet = ss.getSheetByName("Profile");
+    if (!skillSheet) throw new Error("❌ 找不到 SkillMaster 表");
 
-  if (!skillSheet) throw new Error("❌ 找不到 SkillMaster 表");
+    // --- ✅【效能優化】一次性讀取所有需要的資料 ---
+    const skillData = skillSheet.getDataRange().getValues();
+    const skillHeaders = skillData[0];
+    const skillRows = skillData.slice(1);
 
-  const data = skillSheet.getDataRange().getValues();
-  const headers = data[0];
-  const rows = data.slice(1);
+    const profileData = profileSheet.getDataRange().getValues();
+    const profileHeaders = profileData[0];
+    const profileRow = profileData[1];
+    const profile = {};
+    profileHeaders.forEach((key, i) => profile[key] = profileRow[i]);
 
-  const idx = rows.findIndex(r => r[0] === skillId);
-  if (idx === -1) throw new Error("❌ 找不到此技能");
+    // --- 執行學習邏輯 ---
+    const skillIndex = skillRows.findIndex(r => r[0] === skillId);
+    if (skillIndex === -1) throw new Error("❌ 找不到此技能");
 
-  const row = rows[idx];
-  const get = (field) => row[headers.indexOf(field)];
-  const effects = JSON.parse(get("Effects") || "{}");
+    const skillRowToUpdate = skillRows[skillIndex];
+    const lastDoneDateCol = skillHeaders.indexOf("LastDoneDate");
+    const streakCol = skillHeaders.indexOf("StreakCount");
+    const totalCol = skillHeaders.indexOf("TotalDoneCount");
 
-  const lastDate = get("LastDoneDate");
-  const lastDateStr = (lastDate instanceof Date)
-    ? Utilities.formatDate(lastDate, Session.getScriptTimeZone(), "yyyy/MM/dd")
-    : "";
+    const lastDate = skillRowToUpdate[lastDoneDateCol];
+    const todayStr = formatYMD(new Date());
+    if (lastDate instanceof Date && formatYMD(lastDate) === todayStr) throw new Error("⚠️ 今天已學過此技能");
 
-  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
-  if (lastDateStr === todayStr) throw new Error("⚠️ 今天已學過此技能");
+    const effects = JSON.parse(skillRowToUpdate[skillHeaders.indexOf("Effects")] || "{}");
+    const skillName = skillRowToUpdate[skillHeaders.indexOf("SkillName")] || "未知技能";
+    const rewardResult = applyRewards(profile, effects, "學習 - " + skillName);
 
-  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-  const profile = {};
-  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
+    const lastDateStr = (lastDate instanceof Date) ? formatYMD(lastDate) : "";
+    const yesterdayStr = formatYMD(new Date(new Date().getTime() - 86400000));
 
-  // ✅ 加入具體技能名稱
-  const skillName = get("SkillName") || "未知技能";
-  const rewardResult = applyRewards(profile, effects, "學習 - " + skillName);
+    skillRowToUpdate[lastDoneDateCol] = new Date();
+    skillRowToUpdate[streakCol] = (lastDateStr === yesterdayStr) ? (parseInt(skillRowToUpdate[streakCol] || 0)) + 1 : 1;
+    skillRowToUpdate[totalCol] = (parseInt(skillRowToUpdate[totalCol] || 0)) + 1;
 
-  const sheetRow = idx + 2;
-  const today = new Date();
-  const streakIndex = headers.indexOf("StreakCount");
-  const totalIndex = headers.indexOf("TotalDoneCount");
-  const dateIndex = headers.indexOf("LastDoneDate");
+    // --- ✅【效能優化】一次性寫回更新後的技能資料 ---
+    skillSheet.getRange(skillIndex + 2, 1, 1, skillHeaders.length).setValues([skillRowToUpdate]);
 
-  const yesterdayStr = Utilities.formatDate(new Date(today.getTime() - 86400000), Session.getScriptTimeZone(), "yyyy/MM/dd");
-  const newStreak = (lastDateStr === yesterdayStr) ? (parseInt(get("StreakCount")) || 0) + 1 : 1;
-  const newTotal = (parseInt(get("TotalDoneCount")) || 0) + 1;
-
-  skillSheet.getRange(sheetRow, dateIndex + 1).setValue(today);
-  skillSheet.getRange(sheetRow, streakIndex + 1).setValue(newStreak);
-  skillSheet.getRange(sheetRow, totalIndex + 1).setValue(newTotal);
-
-  // ✅ 新增：回傳包含懲罰資訊的物件
-  return {
-    message: `🎓 學習 ${skillName} 完成`,
-    penaltyInfo: rewardResult.penaltyInfo
-  };
+    return {
+        message: `🎓 學習 ${skillName} 完成`,
+        penaltyInfo: rewardResult.penaltyInfo
+    };
 }
 
 
@@ -963,23 +953,23 @@ function useItem(itemID, quantity) {
   const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
   const profile = {};
   profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
+
+  // --- ✅【效能優化】一次性讀取所有需要的資料 ---
+  const itemData = itemSheet.getDataRange().getValues();
+  const itemHeaders = itemData[0];
+  const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
+  if (!itemRow) throw new Error("❌ 找不到道具主資料 (ItemMaster)");
+
   const invData = inventorySheet.getDataRange().getValues();
   const invHeaders = invData[0];
   const invRows = invData.slice(1);
   const invIndex = invRows.findIndex(row => row[invHeaders.indexOf("ItemID")] === itemID);
   if (invIndex === -1) throw new Error("❌ 背包中找不到此道具");
-  
+
   quantity = parseInt(quantity) || 1;
   if (quantity <= 0) throw new Error("⚠️ 使用數量必須大於 0");
-  
-  const countIdx = invHeaders.indexOf("Count");
-  const count = parseInt(invRows[invIndex][countIdx]);
+  const count = parseInt(invRows[invIndex][invHeaders.indexOf("Count")]);
   if (count < quantity) throw new Error(`⚠️ 數量不足，需要 ${quantity} 個，但你只有 ${count} 個。`);
-  
-  const itemData = itemSheet.getDataRange().getValues();
-  const itemHeaders = itemData[0];
-  const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
-  if (!itemRow) throw new Error("❌ 找不到道具主資料 (ItemMaster)");
   
   const itemMaster = {};
   itemHeaders.forEach((k, i) => itemMaster[k] = itemRow[i]);
@@ -1014,16 +1004,10 @@ function useItem(itemID, quantity) {
     }
     
     // --- 批次發放道具 (此處假設禮包內道具皆可堆疊) ---
-    const invData = inventorySheet.getDataRange().getValues();
-    const invHeaders = invData[0];
-    const invRows = invData.slice(1);
     const itemIDCol = invHeaders.indexOf("ItemID");
     const countCol = invHeaders.indexOf("Count");
-    
     const inventoryMap = {};
-    invRows.forEach((row, index) => {
-      inventoryMap[row[itemIDCol]] = { count: parseInt(row[countCol]) || 0, sheetRow: index + 2 };
-    });
+    invRows.forEach((row, index) => { inventoryMap[row[itemIDCol]] = { count: parseInt(row[countCol]) || 0, sheetRow: index + 2 }; });
     
     const rowsToAppend = [];
     Object.entries(itemsToAdd).forEach(([id, qty]) => {
@@ -1041,8 +1025,8 @@ function useItem(itemID, quantity) {
     }
     
     // 消耗禮包
-    if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
-    else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
+    if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); }
+    else { inventorySheet.getRange(invIndex + 2, invHeaders.indexOf("Count") + 1).setValue(count - quantity); }
     
     writeProfile(profile, `開啟禮包 - ${itemName}`);
     // ✅ 修正：回傳結構化資料
@@ -1080,7 +1064,7 @@ function useItem(itemID, quantity) {
     
     // 消耗道具
     if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); }
-    else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
+    else { inventorySheet.getRange(invIndex + 2, invHeaders.indexOf("Count") + 1).setValue(count - quantity); }
 
     // ✅ 修正：回傳結構化資料
     return {
@@ -1111,8 +1095,8 @@ function useItem(itemID, quantity) {
     
     if (!effectApplied) { throw new Error(`❌ 貨幣包 [${itemName}] 的效果設定無效。`); }
     
-    if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); } 
-    else { inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity); }
+    if (count - quantity <= 0) { inventorySheet.deleteRow(invIndex + 2); }
+    else { inventorySheet.getRange(invIndex + 2, invHeaders.indexOf("Count") + 1).setValue(count - quantity); }
     
     // ✅ 修正：回傳結構化資料
     return {
@@ -1172,7 +1156,7 @@ function useItem(itemID, quantity) {
   if (count - quantity <= 0) {
     inventorySheet.deleteRow(invIndex + 2);
   } else {
-    inventorySheet.getRange(invIndex + 2, countIdx + 1).setValue(count - quantity);
+    inventorySheet.getRange(invIndex + 2, invHeaders.indexOf("Count") + 1).setValue(count - quantity);
   }
   
   if (itemType === 'Redeemable') {
@@ -1350,14 +1334,15 @@ function buyItem(itemID) {
   const profileSheet = ss.getSheetByName("Profile");
   const itemSheet = ss.getSheetByName("ItemMaster");
   const inventorySheet = ss.getSheetByName("Inventory");
-
   if (!profileSheet || !itemSheet || !inventorySheet) throw new Error("❌ 找不到必要的資料表 (Profile/ItemMaster/Inventory)。");
 
+  // --- ✅【效能優化】一次性讀取所有需要的資料 ---
   const itemData = itemSheet.getDataRange().getValues();
   const itemHeaders = itemData[0];
   const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
   if (!itemRow) throw new Error("❌ 找不到此商品。");
 
+  // --- 處理商品資料 ---
   const item = {};
   itemHeaders.forEach((h, i) => item[h] = itemRow[i]);
   if (item.IsPurchasable !== true) throw new Error("❌ 此商品不可購買。");
@@ -1365,7 +1350,7 @@ function buyItem(itemID) {
   const price = parseInt(item.BuyPrice || 0);
   const honorPrice = parseInt(item.HonorBuyPrice || 0);
 
-  // --- 讀取 Profile 並計算折扣 ---
+  // --- 讀取 Profile 並計算費用 ---
   const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
   const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
   const profile = {};
@@ -1385,10 +1370,9 @@ function buyItem(itemID) {
     throw new Error(`⚠️ 榮譽點數不足！需要 ${finalHonorPrice}。`);
   }
 
-  // --- 扣錢 ---
-  // ✅ 修正：扣除折扣後的價格
-  if (price > 0) profile.Coins = (parseInt(profile.Coins) || 0) - price;
-  if (honorPrice > 0) profile.HonorPoints = (parseInt(profile.HonorPoints) || 0) - honorPrice;
+  // --- 扣錢 & 發放道具 ---
+  if (price > 0) profile.Coins = (parseInt(profile.Coins) || 0) - finalPrice;
+  if (honorPrice > 0) profile.HonorPoints = (parseInt(profile.HonorPoints) || 0) - finalHonorPrice;
 
   const invData = inventorySheet.getDataRange().getValues();
   const invHeaders = invData[0];
@@ -1409,155 +1393,6 @@ function buyItem(itemID) {
   writeProfile(profile, `購買商品 - ${item.ItemName}`);
 
   return `✅ 成功購買 ${item.ItemName}！`;
-}
-
-/**
- * 處理玩家購買並開啟十個寶箱的邏輯 (十連抽)
- * @param {string} itemID - 欲購買的寶箱 ID
- * @returns {Array<object>} - 包含 10 個獎勵物品的陣列
- */
-function buyAndOpenTenItems(itemID) {
-  const ss = SpreadsheetApp.openById(getConfig().SPREADSHEET_ID);
-  const profileSheet = ss.getSheetByName("Profile");
-  const itemSheet = ss.getSheetByName("ItemMaster");
-  const inventorySheet = ss.getSheetByName("Inventory");
-
-  // --- 1. 讀取資料 & 檢查費用 ---
-  const itemData = itemSheet.getDataRange().getValues();
-  const itemHeaders = itemData[0];
-  const itemRow = itemData.slice(1).find(r => r[itemHeaders.indexOf("ItemID")] === itemID);
-  if (!itemRow) throw new Error("❌ 找不到此商品。");
-
-  const item = {};
-  itemHeaders.forEach((h, i) => item[h] = itemRow[i]);
-  if (item.ItemType !== 'TreasureChest') throw new Error("❌ 此物品不是寶箱，無法十連抽。");
-
-  const price = parseInt(item.BuyPrice || 0) * 10;
-  const honorPrice = parseInt(item.HonorBuyPrice || 0) * 10;
-
-  // --- 讀取 Profile 並計算折扣 ---
-  const profileHeaders = profileSheet.getRange(1, 1, 1, profileSheet.getLastColumn()).getValues()[0];
-  const profileRow = profileSheet.getRange(2, 1, 1, profileHeaders.length).getValues()[0];
-  const profile = {};
-  profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
-
-  const activeStatuses = evaluateStatusRules(profile);
-  const effectsSummary = calculateEffectsSummary(activeStatuses);
-  const discountRate = (100 - (effectsSummary.shopDiscount || 0)) / 100;
-
-  const finalPrice = Math.round(price * discountRate);
-  const finalHonorPrice = Math.round(honorPrice * discountRate);
-
-  if (finalPrice > 0 && (parseInt(profile.Coins) || 0) < finalPrice) {
-    throw new Error(`⚠️ 金幣不足！十連抽需要 ${finalPrice}。`);
-  }
-  if (finalHonorPrice > 0 && (parseInt(profile.HonorPoints) || 0) < finalHonorPrice) {
-    throw new Error(`⚠️ 榮譽點數不足！十連抽需要 ${finalHonorPrice}。`);
-  }
-
-  // --- 2. 執行 10 次抽獎 ---
-  const lootTable = JSON.parse(item.LootTableJSON || '[]');
-  // ✅【核心修改】在抽獎前，先讀取玩家已擁有的外觀
-  const wardrobeSheet = ss.getSheetByName("Wardrobe");
-  const wardrobeData = wardrobeSheet.getDataRange().getValues();
-  const ownedAppearanceFilenames = new Set(wardrobeData.slice(1).map(row => row[wardrobeSheet.getRange(1, 1, 1, wardrobeSheet.getLastColumn()).getValues()[0].indexOf("Filename")]));
-
-  const results = [];
-  for (let i = 0; i < 10; i++) {
-    // ✅【核心修改】呼叫全域抽獎函式
-    results.push(_performSinglePull(lootTable, itemData, itemHeaders, ownedAppearanceFilenames, ss));
-  }
-
-  // --- 3. 檢查並觸發動態保底機制 ---
-  const itemRarityLoot = lootTable.filter(l => (l.Type || "ItemRarity") === "ItemRarity");
-  if (itemRarityLoot.length > 0) {
-    const maxRarity = Math.max(...itemRarityLoot.map(l => parseInt(l.Rarity) || 0));
-    const hasGuaranteedItem = results.some(r => r.type === 'item' && parseInt(r.rarity) === maxRarity);
-
-    if (!hasGuaranteedItem) {
-      Logger.log(`[十連抽] 未抽中該獎池最高星級 ${maxRarity}★ 道具，觸發保底機制！`);
-      const guaranteedLootTable = itemRarityLoot.filter(l => parseInt(l.Rarity) === maxRarity);
-      
-      if (guaranteedLootTable.length > 0) {
-        // ✅【核心修改】呼叫全域抽獎函式
-        const guaranteedItem = _performSinglePull(guaranteedLootTable, itemData, itemHeaders, ownedAppearanceFilenames, ss);
-        results[9] = guaranteedItem; // 替換最後一個結果
-        Logger.log(`[十連抽] 保底抽中：${guaranteedItem.rarity}★ ${guaranteedItem.itemName}`);
-      }
-    }
-  }
-
-  // --- 4. 扣除費用 & 發放獎勵 ---
-  if (price > 0) profile.Coins = (parseInt(profile.Coins) || 0) - finalPrice;
-  if (honorPrice > 0) profile.HonorPoints = (parseInt(profile.HonorPoints) || 0) - finalHonorPrice;
-
-  // 處理抽中的貨幣
-  const currencyRewards = {};
-  results.filter(r => r.type === 'currency').forEach(res => {
-    currencyRewards[res.rewardID] = (currencyRewards[res.rewardID] || 0) + parseFloat(res.quantity);
-  });
-  applyRewards(profile, currencyRewards, `十連抽 - ${item.ItemName}`);
-
-  // ✅【核心修改】處理抽中的重複外觀
-  const duplicateCount = results.filter(r => r.type === 'duplicate_appearance').length;
-  if (duplicateCount > 0) {
-    applyRewards(profile, { 'Coins': 500 * duplicateCount }, `十連抽 - ${item.ItemName} (重複外觀)`);
-  }
-
-  // 批次發放道具
-  const invData = inventorySheet.getDataRange().getValues();
-  const invHeaders = invData[0];
-  const invRows = invData.slice(1);
-  const itemIDCol = invHeaders.indexOf("ItemID");
-  const countCol = invHeaders.indexOf("Count");
-
-  const inventoryMap = {};
-  invRows.forEach((row, index) => {
-    const currentItemID = row[itemIDCol];
-    if (!inventoryMap[currentItemID]) {
-      inventoryMap[currentItemID] = {
-        count: parseInt(row[countCol]) || 0,
-        sheetRow: index + 2
-      };
-    }
-  });
-
-  const itemsToAdd = {};
-  results.filter(r => r.type === 'item').forEach(res => {
-    itemsToAdd[res.itemID] = (itemsToAdd[res.itemID] || 0) + 1;
-  });
-
-  // ✅【核心修改】處理抽中的新外觀
-  const newAppearances = results.filter(r => r.type === 'appearance');
-  if (newAppearances.length > 0) {
-    const wardrobeSheet = ss.getSheetByName("Wardrobe");
-    newAppearances.forEach(app => wardrobeSheet.appendRow([app.filename, app.shortType, new Date()]));
-  }
-
-  const rowsToAppend = [];
-  Object.entries(itemsToAdd).forEach(([id, qty]) => {
-    if (inventoryMap[id] && item.IsStackable !== false) { // 假設 IsStackable
-      const newCount = inventoryMap[id].count + qty;
-      inventorySheet.getRange(inventoryMap[id].sheetRow, countCol + 1).setValue(newCount);
-    } else {
-      const newRow = invHeaders.map(h => (h === "ItemID") ? id : (h === "Count" ? qty : ""));
-      rowsToAppend.push(newRow);
-    }
-  });
-
-  if (rowsToAppend.length > 0) {
-    inventorySheet.getRange(inventorySheet.getLastRow() + 1, 1, rowsToAppend.length, invHeaders.length).setValues(rowsToAppend);
-  }
-
-  // --- 5. 回傳結果給前端 ---
-  return results.map(r => ({
-    itemName: r.itemName || r.displayName,
-    rarity: r.rarity,
-    // ✅ 新增回傳資訊
-    type: r.type,
-    rewardID: r.rewardID,
-    quantity: r.quantity
-  }));
 }
 
 /**
@@ -2373,8 +2208,9 @@ function sendAdminMail(title, message, rewardJson, expiryDays) {
 function getAdminRewardOptions() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const itemSheet = ss.getSheetByName("ItemMaster");
-  if (!itemSheet) return { items: [] };
+  const achievementSheet = ss.getSheetByName('AchievementLog');
 
+  // --- ✅【效能優化】一次性讀取所有需要的資料 ---
   const data = itemSheet.getDataRange().getValues();
   const headers = data[0];
   const itemIDCol = headers.indexOf("ItemID");
@@ -2385,8 +2221,18 @@ function getAdminRewardOptions() {
     name: row[itemNameCol] || row[itemIDCol]
   })).sort((a, b) => a.name.localeCompare(b.name)); // 按名稱字母排序
 
+  let pendingAchievementsCount = 0;
+  if (achievementSheet && achievementSheet.getLastRow() > 1) {
+    const achData = achievementSheet.getDataRange().getValues();
+    const statusCol = achData[0].indexOf('Status');
+    if (statusCol !== -1) {
+      pendingAchievementsCount = achData.slice(1).filter(row => String(row[statusCol] || '').trim().toLowerCase() === 'pending').length;
+    }
+  }
+
   return {
-    items: items
+    items: items,
+    pendingAchievementsCount: pendingAchievementsCount
   };
 }
 
@@ -2533,6 +2379,9 @@ function openMultipleChests(itemID, quantity, isPurchase) {
   const profile = {};
   profileHeaders.forEach((k, i) => profile[k] = profileRow[i]);
 
+  const invData = inventorySheet.getDataRange().getValues();
+  const invHeaders = invData[0];
+
   if (isPurchase) {
     const price = (parseInt(item.BuyPrice) || 0) * quantity;
     const honorPrice = (parseInt(item.HonorBuyPrice) || 0) * quantity;
@@ -2541,8 +2390,6 @@ function openMultipleChests(itemID, quantity, isPurchase) {
     if (price > 0) profile.Coins -= price;
     if (honorPrice > 0) profile.HonorPoints -= honorPrice;
   } else {
-    const invData = inventorySheet.getDataRange().getValues();
-    const invHeaders = invData[0];
     const invIndex = invData.slice(1).findIndex(r => r[invHeaders.indexOf("ItemID")] === itemID);
     if (invIndex === -1) throw new Error("❌ 背包中找不到此寶箱。");
     const currentCount = parseInt(invData[invIndex + 1][invHeaders.indexOf("Count")] || 0);
