@@ -2232,8 +2232,15 @@ function renderMailList(mails) {
   let html = '';
   mails.forEach(mail => {
     const readClass = mail.isRead ? '' : 'font-weight: bold;';
-    const icon = mail.hasReward ? '🎁' : '✉️';
-
+    // ✅ 新增：根據已讀/未讀和是否有附件，顯示不同圖示
+    let icon = '';
+    if (mail.hasReward) {
+      // 🎁: 未領取, 📤: 已領取 (象徵獎勵已取出)
+      icon = mail.isRead ? '📤' : '🎁'; // 領取後 isRead 會變 true
+    } else {
+      // ✉️: 未讀, 📩: 已讀 (信封帶有向下箭頭，代表已讀取/下載)
+      icon = mail.isRead ? '📩' : '✉️';
+    }
     // ✅ 新增：為沒有附件且未讀的信件準備「標示已讀」按鈕
     let manualReadButton = '';
     if (!mail.hasReward && !mail.isRead) {
