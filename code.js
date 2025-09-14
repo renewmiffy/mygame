@@ -447,7 +447,7 @@ function getMissionList() {
       claimed = !!lastClaimed && !repeatable;
     }
 
-    let rewardText = "";
+    let rewardText = ""; // 用於前端顯示的格式化文字
     const rewardJsonString = getMissionField(row, "獎勵") || "{}";
     try {
       const rewardObj = JSON.parse(rewardJsonString);
@@ -478,6 +478,7 @@ function getMissionList() {
       id: missionId,
       name: name,
       description: name, // 直接使用任務名稱，避免前端顯示重複
+      rewardJson: rewardJsonString, // ✅ 新增：回傳原始 JSON 字串供編輯器使用
       rewardText: rewardText,
       fulfilled: fulfilled,
       claimed: claimed,
@@ -2228,41 +2229,52 @@ function sendAdminMail(title, message, rewardJson, expiryDays) {
  * @returns {object} 包含所有可選道具的物件。
  */
 function getAdminRewardOptions() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const itemSheet = ss.getSheetByName("ItemMaster");
-  const achievementSheet = ss.getSheetByName('AchievementLog');
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const itemSheet = ss.getSheetByName("ItemMaster");
+    const achievementSheet = ss.getSheetByName('AchievementLog');
+    const fieldMappingSheet = ss.getSheetByName('FieldMapping');
 
-  // --- ✅【效能優化】一次性讀取所有需要的資料 ---
-  const data = itemSheet.getDataRange().getValues();
-  const headers = data[0];
-  const itemIDCol = headers.indexOf("ItemID");
-  const itemNameCol = headers.indexOf("ItemName");
-  const rarityCol = headers.indexOf("Rarity"); // ✅ 新增：讀取稀有度欄位
+    // 1. 取得所有道具
+    const itemData = itemSheet.getDataRange().getValues();
+    const itemHeaders = itemData[0];
+    const itemIDCol = itemHeaders.indexOf("ItemID");
+    const itemNameCol = itemHeaders.indexOf("ItemName");
+    const rarityCol = itemHeaders.indexOf("Rarity");
 
-  const items = data.slice(1).map(row => ({
-    id: row[itemIDCol],
-    name: row[itemNameCol] || row[itemIDCol],
-    rarity: row[rarityCol] || 0 // ✅ 新增：將稀有度加入回傳物件
-  })).sort((a, b) => {
-    const rarityB = parseInt(b.rarity) || 0;
-    const rarityA = parseInt(a.rarity) || 0;
-    if (rarityA !== rarityB) return rarityA - rarityB; // 稀有度低的排前面
-    return a.name.localeCompare(b.name); // 稀有度相同時，按名稱排序
-  });
+    const items = itemData.slice(1).map(row => ({
+        id: row[itemIDCol],
+        name: row[itemNameCol] || row[itemIDCol],
+        rarity: row[rarityCol] || 0
+    })).sort((a, b) => {
+        const rarityB = parseInt(b.rarity) || 0;
+        const rarityA = parseInt(a.rarity) || 0;
+        if (rarityA !== rarityB) return rarityA - rarityB;
+        return a.name.localeCompare(b.name);
+    });
 
-  let pendingAchievementsCount = 0;
-  if (achievementSheet && achievementSheet.getLastRow() > 1) {
-    const achData = achievementSheet.getDataRange().getValues();
-    const statusCol = achData[0].indexOf('Status');
-    if (statusCol !== -1) {
-      pendingAchievementsCount = achData.slice(1).filter(row => String(row[statusCol] || '').trim().toLowerCase() === 'pending').length;
+    // 2. 取得所有可設定的屬性
+    const mappingData = fieldMappingSheet.getDataRange().getValues();
+    const attributes = mappingData.slice(1).map(row => ({
+        id: row[1],   // 英文欄位名，例如 "Coins"
+        name: row[0]  // 中文名稱，例如 "金幣"
+    })).filter(attr => attr.id && attr.name) // 過濾掉空值
+       .sort((a, b) => a.name.localeCompare(b.name));
+
+    // 3. 取得待審核成就數量
+    let pendingAchievementsCount = 0;
+    if (achievementSheet && achievementSheet.getLastRow() > 1) {
+        const achData = achievementSheet.getDataRange().getValues();
+        const statusCol = achData[0].indexOf('Status');
+        if (statusCol !== -1) {
+            pendingAchievementsCount = achData.slice(1).filter(row => String(row[statusCol] || '').trim().toLowerCase() === 'pending').length;
+        }
     }
-  }
 
-  return {
-    items: items,
-    pendingAchievementsCount: pendingAchievementsCount
-  };
+    return {
+        items: items,
+        attributes: attributes, // ✅ 新增：回傳屬性列表
+        pendingAchievementsCount: pendingAchievementsCount
+    };
 }
 
 /**
@@ -2795,6 +2807,61 @@ function processAchievement(achievementId, action, rewardJson, rejectionReason, 
 }
 
 /**
+ * [新函式][內部用] 取得管理後台獎勵選項 (優化版)
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss - 已開啟的 Spreadsheet 物件。
+ */
+function _getAdminRewardOptions_internal(ss) {
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  const achievementSheet = ss.getSheetByName('AchievementLog');
+  const fieldMappingSheet = ss.getSheetByName('FieldMapping');
+
+  // 1. 取得所有道具
+  const itemData = itemSheet.getDataRange().getValues();
+  const itemHeaders = itemData[0];
+  const itemIDCol = itemHeaders.indexOf("ItemID");
+  const itemNameCol = itemHeaders.indexOf("ItemName");
+  const rarityCol = itemHeaders.indexOf("Rarity");
+
+  const items = itemData.slice(1).map(row => ({
+    id: row[itemIDCol],
+    name: row[itemNameCol] || row[itemIDCol],
+    rarity: row[rarityCol] || 0
+  })).sort((a, b) => (parseInt(a.rarity) || 0) - (parseInt(b.rarity) || 0) || a.name.localeCompare(b.name));
+
+  // 2. 取得所有可設定的屬性
+  // ✅【核心修正】不再讀取整個 FieldMapping，而是定義一個可作為獎勵的屬性白名單。
+  // 這樣可以避免將不應修改的欄位（如玩家名稱）顯示在獎勵編輯器中。
+  const rewardableAttributes = [
+    { id: 'Coins', name: '💰 金幣' },
+    { id: 'HonorPoints', name: '⭐ 榮譽點數' },
+    { id: 'Health', name: '❤️ 健康' },
+    { id: 'Mood', name: '😊 心情' },
+    { id: 'Energy', name: '⚡ 精力' },
+    { id: 'Cleanliness', name: '🧼 清潔度' },
+    { id: 'SelfDiscipline', name: '⚖️ 自律' }
+  ];
+
+  // 為了保持彈性，我們仍然可以從 FieldMapping 讀取中文名稱，但只讀取白名單中的屬性。
+  const mappingData = fieldMappingSheet.getDataRange().getValues();
+  const fieldMap = Object.fromEntries(mappingData.slice(1).map(row => [row[1], row[0]]));
+
+  const attributes = rewardableAttributes.map(attr => ({
+      id: attr.id,
+      name: fieldMap[attr.id] || attr.name // 優先使用 FieldMapping 的名稱，若無則用預設
+  })).sort((a, b) => a.name.localeCompare(b.name));
+
+  // 3. 取得待審核成就數量 (這部分邏輯與原函式相同，可以保持)
+  let pendingAchievementsCount = 0;
+  if (achievementSheet && achievementSheet.getLastRow() > 1) {
+    const achData = achievementSheet.getDataRange().getValues();
+    const statusCol = achData[0].indexOf('Status');
+    if (statusCol !== -1) pendingAchievementsCount = achData.slice(1).filter(row => String(row[statusCol] || '').trim().toLowerCase() === 'pending').length;
+  }
+
+  return { items, attributes, pendingAchievementsCount };
+}
+
+/**
  * [玩家用] 取得已核准的成就歷史紀錄，分為「里程碑」和「近期成果」。
  * @returns {{milestones: Array<object>, recents: Array<object>}} 包含兩類成就的物件。
  */
@@ -2854,4 +2921,149 @@ function getCompletedAchievements() {
     Logger.log(`[getCompletedAchievements] 執行時發生嚴重錯誤: ${e.message}`);
     return { milestones: [], recents: [] }; // 發生任何錯誤都回傳空陣列，避免前端報錯
   }
+}
+/**
+ * [新函式][管理後台用] 取得任務管理頁面需要的所有資料。
+ * @returns {object} 包含所有任務列表和獎勵選項的物件。
+ */
+function getTaskManagementData() {
+  try {
+    // 【效能優化】只打開一次試算表
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+    // 【效能優化】呼叫新的內部函式，並傳入已開啟的 ss 物件
+    const dailyTasks = _getDailyTaskList_internal(ss);
+    const learningSkills = _getAllSkills_internal(ss);
+    const missions = _getMissionList_internal(ss);
+    const rewardOptions = _getAdminRewardOptions_internal(ss);
+
+    return {
+      dailyTasks: dailyTasks,
+      learningSkills: learningSkills,
+      missions: missions,
+      rewardOptions: rewardOptions
+    };
+  } catch (e) {
+    Logger.log(`[getTaskManagementData] 執行時發生錯誤: ${e.stack}`);
+    return { error: e.message };
+  }
+}
+
+/**
+ * [新函式][內部用] 取得日常任務列表 (優化版)
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss - 已開啟的 Spreadsheet 物件。
+ */
+function _getDailyTaskList_internal(ss) {
+  const sheet = ss.getSheetByName("DailyTasks");
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const rows = data.slice(1);
+  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
+
+  return rows.map(row => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = row[i]);
+    let lastDateStr = (obj.LastDoneDate instanceof Date) ? Utilities.formatDate(obj.LastDoneDate, Session.getScriptTimeZone(), "yyyy/MM/dd") : "";
+    return {
+      id: obj.TaskID,
+      name: obj.任務名稱,
+      effects: obj.Effects,
+      fulfilledToday: (lastDateStr === todayStr)
+    };
+  });
+}
+
+/**
+ * [新函式][內部用] 取得所有技能列表 (優化版)
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss - 已開啟的 Spreadsheet 物件。
+ */
+function _getAllSkills_internal(ss) {
+  const sheet = ss.getSheetByName("SkillMaster");
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const rows = data.slice(1);
+  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd");
+
+  return rows.map(row => {
+    const skill = {};
+    let lastDateStr = "";
+    headers.forEach((h, i) => {
+      if (h === "LastDoneDate" && row[i] instanceof Date) {
+        lastDateStr = Utilities.formatDate(row[i], Session.getScriptTimeZone(), "yyyy/MM/dd");
+        skill[h] = lastDateStr;
+      } else {
+        skill[h] = row[i];
+      }
+    });
+    skill.learnedToday = (lastDateStr === todayStr);
+    return skill;
+  });
+}
+
+/**
+ * [新函式][內部用] 取得任務中心列表 (優化版)
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss - 已開啟的 Spreadsheet 物件。
+ */
+function _getMissionList_internal(ss) {
+  // 為了避免修改複雜的 getMissionList 函式，我們暫時讓它保持原樣
+  // 這裡的呼叫仍然會多開一次試算表，但已從 4 次減少到 2 次，效能會有顯著提升
+  // 未來可以進一步將 getMissionList 內部邏輯也拆分出來
+  return getMissionList();
+}
+
+/**
+ * [新函式][管理後台用] 儲存單一任務的設定變更。
+ * @param {string} taskType - 任務類型 ('daily', 'skill', 'mission')。
+ * @param {string} taskId - 要更新的任務 ID。
+ * @param {object} updatedData - 一個包含要更新欄位和新值的物件。例如：{ "任務名稱": "新的名稱", "Effects": "{...}" }
+ * @returns {string} 執行結果訊息。
+ */
+function saveTaskConfiguration(taskType, taskId, updatedData) {
+    if (!taskType || !taskId || !updatedData) {
+        throw new Error("❌ 缺少必要的參數 (taskType, taskId, updatedData)。");
+    }
+
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    let sheet;
+    let idColumnName;
+
+    // 根據任務類型選擇對應的工作表和 ID 欄位名稱
+    switch (taskType) {
+        case 'daily':
+            sheet = ss.getSheetByName("DailyTasks");
+            idColumnName = "TaskID";
+            break;
+        case 'skill':
+            sheet = ss.getSheetByName("SkillMaster");
+            idColumnName = "SkillID";
+            break;
+        case 'mission':
+            sheet = ss.getSheetByName("MissionCenter");
+            idColumnName = "MissionID";
+            break;
+        default:
+            throw new Error(`❌ 無效的任務類型: `);
+    }
+
+    if (!sheet) throw new Error(`❌ 找不到工作表: ${sheet.getName()}`);
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const idColIndex = headers.indexOf(idColumnName);
+
+    if (idColIndex === -1) throw new Error(`❌ 在 ${sheet.getName()} 中找不到 ID 欄位 ""。`);
+
+    // 找到要更新的列
+    const rowIndex = data.findIndex(row => row[idColIndex] === taskId);
+    if (rowIndex === -1) throw new Error(`❌ 在 ${sheet.getName()} 中找不到 ID 為 "" 的任務。`);
+
+    // 逐一更新指定的欄位
+    Object.entries(updatedData).forEach(([headerName, newValue]) => {
+        const colIndex = headers.indexOf(headerName);
+        if (colIndex !== -1) {
+            sheet.getRange(rowIndex + 1, colIndex + 1).setValue(newValue);
+        }
+    });
+
+    return `✅ 已成功更新  任務 [] 的設定。`;
 }

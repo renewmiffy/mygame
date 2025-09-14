@@ -4,6 +4,27 @@
     <!-- prettier-ignore -->
     <base target="_top">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- ✅ 新增：Tab 樣式 -->
+    <style>
+      .tabs { display: flex; border-bottom: 2px solid #ccc; margin-bottom: 20px; }
+      .tab-button { padding: 10px 20px; cursor: pointer; border: none; background-color: transparent; font-size: 1.1em; border-bottom: 3px solid transparent; }
+      .tab-button.active { border-bottom-color: #007bff; font-weight: bold; color: #007bff; }
+      .tab-panel { display: none; }
+      .tab-panel.active { display: block; }
+    </style>
+    <!-- ✅ 新增：任務管理介面樣式 -->
+    <style>
+      .task-management-section h3 { border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 30px; }
+      .task-card { border: 1px solid #ccc; padding: 15px; margin: 15px 0; border-radius: 8px; background: #fdfdfd; }
+      .task-card h4 { margin-top: 0; }
+      .reward-editor-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+      .reward-editor-row select { padding: 8px; flex-grow: 1; }
+      .reward-editor-row input { width: 100px; padding: 8px; }
+      .reward-editor-row button { background: #dc3545; color: white; border: none; border-radius: 50%; width: 28px; height: 28px; cursor: pointer; font-weight: bold; }
+      .task-actions button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; margin-top: 10px; }
+      .btn-add-reward { background-color: #17a2b8; color: white; }
+      .btn-save-task { background-color: #28a745; color: white; }
+    </style>
     <style>
       body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px; background-color: #f4f4f9; color: #333; font-size: 18px; }
       .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
@@ -79,65 +100,88 @@
     </style>
   </head>
   <body>
-    <!-- ✅ 新增：發送郵件區塊 -->
-    <div class="container">
-      <h1>📬 發送郵件/獎勵</h1>
-      <form id="send-mail-form">
-        <div class="form-group">
-          <label for="mail-title">郵件標題</label>
-          <input type="text" id="mail-title" required>
-        </div>
-        <div class="form-group">
-          <label for="mail-message">郵件內文</label>
-          <textarea id="mail-message" rows="4" required></textarea>
-        </div>
-        <div class="form-group">
-          <label>獎勵內容 (可留空)</label>
-          <fieldset class="reward-builder">
-            <legend>貨幣</legend>
-            <div class="reward-row">
-              <label for="reward-coins">💰 金幣</label>
-              <input type="number" id="reward-coins" min="0" placeholder="數量">
-            </div>
-            <div class="reward-row">
-              <label for="reward-honor">⭐ 榮譽點數</label>
-              <input type="number" id="reward-honor" min="0" placeholder="數量">
-            </div>
-          </fieldset>
-          <fieldset class="reward-builder">
-            <legend>道具</legend>
-            <div id="reward-items-list">
-              <!-- 已新增的道具會顯示在這裡 -->
-            </div>
-            <div class="add-item-row">
-              <select id="item-selector"><option value="">載入道具列表中...</option></select>
-              <input type="number" id="item-quantity" min="1" value="1" placeholder="數量">
-              <button type="button" id="add-item-btn">＋ 新增道具</button>
-            </div>
-          </fieldset>
-        </div>
-        <div class="form-group">
-          <label for="mail-expiry">有效天數 (預設 30 天)</label>
-          <input type="number" id="mail-expiry" value="30" min="1">
-        </div>
-        <button type="submit" class="send-btn">發送郵件</button>
-      </form>
-      <div id="send-mail-message"></div>
+    <!-- ✅ 新增：Tab 按鈕 -->
+    <div class="tabs">
+      <button class="tab-button active" onclick="switchTab('mail')">📬 郵件 & 獎勵</button>
+      <button class="tab-button" onclick="switchTab('redemption')">🎁 兌換核銷</button>
+      <button class="tab-button" onclick="switchTab('achievement')">🏆 成就審核</button>
+      <button class="tab-button" onclick="switchTab('tasks')">🔧 任務管理</button>
     </div>
 
-    <!-- 原有的核銷區塊 -->
-    <div class="container">
-      <h1>⏳ 待核銷的兌換請求</h1>
-      <div id="loading">正在載入...</div>
-      <ul id="pending-list" class="item-list"></ul>
-      <div id="message"></div>
-    </div>
+    <!-- ✅ 新增：Tab 面板容器 -->
+    <div id="tab-panels">
 
-    <!-- ✅ 新增：待審核成就區塊 -->
-    <div class="container">
-      <h1 id="achievement-title-header">🏆 待審核的成就</h1> <!-- ✅ 修正：移除重複的 h1 標籤 -->
-      <div id="achievement-loading">正在載入...</div>
-      <ul id="achievement-list" class="item-list"></ul>
+      <!-- 1. 郵件面板 -->
+      <div id="panel-mail" class="tab-panel active">
+        <div class="container">
+          <h1>📬 發送郵件/獎勵</h1>
+          <form id="send-mail-form">
+            <div class="form-group">
+              <label for="mail-title">郵件標題</label>
+              <input type="text" id="mail-title" required>
+            </div>
+            <div class="form-group">
+              <label for="mail-message">郵件內文</label>
+              <textarea id="mail-message" rows="4" required></textarea>
+            </div>
+            <div class="form-group">
+              <label>獎勵內容 (可留空)</label>
+              <fieldset class="reward-builder">
+                <legend>貨幣</legend>
+                <div class="reward-row">
+                  <label for="reward-coins">💰 金幣</label>
+                  <input type="number" id="reward-coins" min="0" placeholder="數量">
+                </div>
+                <div class="reward-row">
+                  <label for="reward-honor">⭐ 榮譽點數</label>
+                  <input type="number" id="reward-honor" min="0" placeholder="數量">
+                </div>
+              </fieldset>
+              <fieldset class="reward-builder">
+                <legend>道具</legend>
+                <div id="reward-items-list">
+                  <!-- 已新增的道具會顯示在這裡 -->
+                </div>
+                <div class="add-item-row">
+                  <select id="item-selector"><option value="">載入道具列表中...</option></select>
+                  <input type="number" id="item-quantity" min="1" value="1" placeholder="數量">
+                  <button type="button" id="add-item-btn">＋ 新增道具</button>
+                </div>
+              </fieldset>
+            </div>
+            <div class="form-group">
+              <label for="mail-expiry">有效天數 (預設 30 天)</label>
+              <input type="number" id="mail-expiry" value="30" min="1">
+            </div>
+            <button type="submit" class="send-btn">發送郵件</button>
+          </form>
+          <div id="send-mail-message"></div>
+        </div>
+      </div>
+
+      <!-- 2. 兌換核銷面板 -->
+      <div id="panel-redemption" class="tab-panel">
+        <div class="container">
+          <h1>⏳ 待核銷的兌換請求</h1>
+          <div id="loading">正在載入...</div>
+          <ul id="pending-list" class="item-list"></ul>
+          <div id="message"></div>
+        </div>
+      </div>
+
+      <!-- 3. 成就審核面板 -->
+      <div id="panel-achievement" class="tab-panel">
+        <div class="container">
+          <h1 id="achievement-title-header">🏆 待審核的成就</h1>
+          <div id="achievement-loading">正在載入...</div>
+          <ul id="achievement-list" class="item-list"></ul>
+        </div>
+      </div>
+
+      <!-- 4. 任務管理面板 -->
+      <div id="panel-tasks" class="tab-panel">
+        <div id="task-management-section" class="container task-management-section"></div>
+      </div>
     </div>
 
     <!-- ✅ 新增：兌換核銷 Modal -->
@@ -202,6 +246,20 @@
     </div>
 
     <script>
+      // ✅ 新增：Tab 切換邏輯
+      function switchTab(tabName) {
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+
+        document.querySelector(`.tab-button[onclick="switchTab('${tabName}')"]`).classList.add('active');
+        document.getElementById(`panel-${tabName}`).classList.add('active');
+
+        // 如果是第一次點擊任務管理，就載入資料
+        if (tabName === 'tasks' && !window.taskDataLoaded) {
+          loadTaskManagement();
+        }
+      }
+
       // ✅ 新增：處理郵件發送表單
       document.getElementById('send-mail-form').addEventListener('submit', function(e) {
         e.preventDefault();
@@ -306,11 +364,13 @@
           .withSuccessHandler(function(options) {
             const mailSelector = document.getElementById('item-selector');
             const achSelector = document.getElementById('ach-item-selector');
-            
+            // ✅ 新增：將獎勵選項存到全域變數，供任務編輯器使用
+            window.REWARD_OPTIONS = options;
+
             mailSelector.innerHTML = '<option value="">-- 請選擇道具 --</option>';
             achSelector.innerHTML = '<option value="">-- 請選擇道具 --</option>';
 
-            options.items.forEach(item => { 
+            options.items.forEach(item => {
               const rarityText = item.rarity > 0 ? `(★${item.rarity}) ` : '';
               const optionHtml = `<option value="${item.id}">${rarityText}${item.name}</option>`;
               mailSelector.innerHTML += optionHtml;
@@ -592,6 +652,152 @@
           <button type="button" class="remove-item-btn" onclick="this.parentElement.remove()">×</button>
         `;
         document.getElementById(listId).appendChild(itemDiv);
+      }
+
+      // --- ✅ 新增：任務管理相關的 JavaScript ---
+
+      // 載入任務管理介面
+      function loadTaskManagement() {
+        const container = document.getElementById('task-management-section');
+        container.innerHTML = '<h2>🔧 任務與獎勵管理</h2><p>正在從 Google Sheets 載入所有任務設定...</p>';
+
+        google.script.run
+          .withSuccessHandler(response => {
+            if (response.error) {
+              container.innerHTML = `<h2>載入失敗</h2><p style="color:red;">${response.error}</p>`;
+              return;
+            }
+            // ✅【核心修正】將從後端取得的獎勵選項存到全域變數
+            window.REWARD_OPTIONS = response.rewardOptions;
+            window.taskDataLoaded = true; // 標記已載入
+            renderTaskEditors(response);
+          })
+          .withFailureHandler(err => {
+            container.innerHTML = `<h2>後端呼叫失敗</h2><p style="color:red;">${err.message}</p>`;
+          })
+          .getTaskManagementData();
+      }
+
+      // 渲染所有任務的編輯器
+      function renderTaskEditors(data) {
+        const container = document.getElementById('task-management-section');
+        let html = '<h2>🔧 任務與獎勵管理</h2>';
+
+        // 日常活動
+        html += '<h3>🧺 日常活動 (DailyTasks)</h3>';
+        data.dailyTasks.forEach(task => {
+          html += createTaskEditor('daily', task.id, task.name, task.effects);
+        });
+
+        // 學習清單
+        html += '<h3>📖 學習清單 (SkillMaster)</h3>';
+        data.learningSkills.forEach(skill => {
+          html += createTaskEditor('skill', skill.SkillID, skill.SkillName, skill.Effects);
+        });
+
+        // 任務中心
+        html += '<h3>📋 任務中心 (MissionCenter)</h3>';
+        data.missions.forEach(mission => {
+          html += createTaskEditor('mission', mission.id, mission.name, mission.rewardJson);
+        });
+
+        container.innerHTML = html;
+      }
+
+      // 建立單一任務的編輯器 HTML
+      function createTaskEditor(taskType, taskId, taskName, effectsJson) {
+        let rewards = {};
+        try {
+          rewards = JSON.parse(effectsJson || '{}');
+        } catch (e) { console.error(`解析 ${taskId} 的 JSON 失敗:`, effectsJson); }
+
+        const editorId = `reward-editor-${taskType}-${taskId}`;
+
+        return `
+          <div class="task-card">
+              <h4>${taskName} <span style="font-weight:normal; color:#888;">(ID: ${taskId})</span></h4>
+              <div id="${editorId}">${renderRewardEditor(rewards)}</div>
+              <div class="task-actions">
+                <button class="btn-add-reward" onclick="addRewardRow('${editorId}', 'attribute')">＋ 新增屬性</button>
+                <button class="btn-add-reward" onclick="addRewardRow('${editorId}', 'item')" style="background-color: #007bff;">＋ 新增道具</button>
+                <button class="btn-save-task" onclick="saveTask('${taskType}', '${taskId}', '${editorId}')">💾 儲存變更</button>
+              </div>
+          </div>
+        `;
+      }
+
+      // 渲染獎勵編輯器的內部 HTML
+      function renderRewardEditor(rewards) {
+        let rewardHtml = '';
+        Object.entries(rewards).forEach(([key, value]) => {
+          if (key === 'Items') return; // 道具另外處理
+          rewardHtml += createRewardRow(key, value);
+        });
+        if (rewards.Items && Array.isArray(rewards.Items)) {
+          rewards.Items.forEach(item => {
+            rewardHtml += createRewardRow('Items', item.Quantity, item.ItemID);
+          });
+        }
+        return rewardHtml;
+      }
+
+      // 建立單行獎勵的 HTML (包含下拉選單和輸入框)
+      function createRewardRow(rewardType, value, itemId = '') {
+        const isItem = rewardType === 'Items';
+        const options = isItem ? window.REWARD_OPTIONS.items : window.REWARD_OPTIONS.attributes;
+        const selectedId = isItem ? itemId : rewardType;
+
+        let optionsHtml = '<option value="">-- 請選擇 --</option>';
+        optionsHtml += options.map(opt =>
+          `<option value="${opt.id}" ${opt.id === selectedId ? 'selected' : ''}>${opt.name}</option>`
+        ).join('');
+
+        return `
+          <div class="reward-editor-row">
+              <select data-type="${isItem ? 'item' : 'attribute'}">${optionsHtml}</select>
+              <input type="number" value="${value}" placeholder="數值">
+              <button onclick="this.parentElement.remove()">－</button>
+          </div>
+        `;
+      }
+
+      // 新增一行空的獎勵編輯列
+      function addRewardRow(editorId, type = 'attribute') {
+        const editorDiv = document.getElementById(editorId);
+        const rewardType = (type === 'item') ? 'Items' : '';
+        const defaultValue = (type === 'item') ? 1 : 0; // 道具預設數量為 1，屬性為 0
+        editorDiv.insertAdjacentHTML('beforeend', createRewardRow(rewardType, defaultValue));
+      }
+
+      // 儲存變更
+      function saveTask(taskType, taskId, editorId) {
+        const editorDiv = document.getElementById(editorId);
+        const rewardRows = editorDiv.querySelectorAll('.reward-editor-row');
+        const newRewards = { Items: [] };
+
+        rewardRows.forEach(row => {
+          const select = row.querySelector('select');
+          const input = row.querySelector('input');
+          const selectedId = select.value;
+          const value = parseInt(input.value, 10);
+          if (!selectedId || isNaN(value)) return;
+
+          if (select.dataset.type === 'item') {
+            newRewards.Items.push({ ItemID: selectedId, Quantity: value });
+          } else {
+            newRewards[selectedId] = (newRewards[selectedId] || 0) + value;
+          }
+        });
+
+        if (newRewards.Items.length === 0) delete newRewards.Items;
+        const effectsJsonString = JSON.stringify(newRewards);
+        const updatedData = { [taskType === 'mission' ? '獎勵' : 'Effects']: effectsJsonString };
+
+        showToast('正在儲存變更...');
+        google.script.run
+          .withSuccessHandler(msg => showToast(msg))
+          .withFailureHandler(err => alert('儲存失敗: ' + err.message))
+          .saveTaskConfiguration(taskType, taskId, updatedData);
       }
     </script>
   </body>
