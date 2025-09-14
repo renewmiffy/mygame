@@ -484,6 +484,8 @@ function getMissionList() {
       claimed: claimed,
       displayOrder: displayOrder,
       rowIndex: i,
+      conditionType: conditionType, // ✅ 新增：回傳條件類型
+      conditionParam: param,        // ✅ 新增：回傳條件參數
       type: type, // 加入類型給一鍵領取判斷用
       currentProgress: currentProgress, // ✅ 5. 回傳進度
       targetValue: targetValue        // ✅ 5. 回傳目標
@@ -1901,8 +1903,13 @@ function applyRewards(profile, rewards, source) {
         finalValue *= (1 + (effectsSummary.honorBonus / 100));
       }
 
-      // 四捨五入到整數
-      finalValue = Math.round(finalValue);
+      // ✅【核心修正】只對金幣進行四捨五入，其他屬性保留小數點
+      if (field === 'Coins') {
+        finalValue = Math.round(finalValue);
+      } else {
+        // 保留到小數點後兩位
+        finalValue = Math.round(finalValue * 100) / 100;
+      }
 
       // 更新 profile
       profile[field] = (parseFloat(profile[field]) || 0) + finalValue;
@@ -2253,12 +2260,25 @@ function getAdminRewardOptions() {
     });
 
     // 2. 取得所有可設定的屬性
+    // ✅【核心修正】將此處的邏輯與 _getAdminRewardOptions_internal 同步，使用白名單機制。
+    const rewardableAttributes = [
+        { id: 'Coins', name: '💰 金幣' },
+        { id: 'HonorPoints', name: '⭐ 榮譽點數' },
+        { id: 'Health', name: '❤️ 健康' },
+        { id: 'Mood', name: '😊 心情' },
+        { id: 'Energy', name: '⚡ 精力' },
+        { id: 'Cleanliness', name: '🧼 清潔度' },
+        { id: 'SelfDiscipline', name: '⚖️ 自律' }
+    ];
+
     const mappingData = fieldMappingSheet.getDataRange().getValues();
-    const attributes = mappingData.slice(1).map(row => ({
-        id: row[1],   // 英文欄位名，例如 "Coins"
-        name: row[0]  // 中文名稱，例如 "金幣"
-    })).filter(attr => attr.id && attr.name) // 過濾掉空值
-       .sort((a, b) => a.name.localeCompare(b.name));
+    const fieldMap = Object.fromEntries(mappingData.slice(1).map(row => [row[1], row[0]]));
+
+    const attributes = rewardableAttributes.map(attr => ({
+        id: attr.id,
+        name: fieldMap[attr.id] || attr.name // 優先使用 FieldMapping 的名稱，若無則用預設
+    })).sort((a, b) => a.name.localeCompare(b.name));
+
 
     // 3. 取得待審核成就數量
     let pendingAchievementsCount = 0;
@@ -3042,7 +3062,7 @@ function saveTaskConfiguration(taskType, taskId, updatedData) {
             idColumnName = "MissionID";
             break;
         default:
-            throw new Error(`❌ 無效的任務類型: `);
+            throw new Error(`❌ 無效的任務類型: ${taskType}`);
     }
 
     if (!sheet) throw new Error(`❌ 找不到工作表: ${sheet.getName()}`);
@@ -3051,7 +3071,7 @@ function saveTaskConfiguration(taskType, taskId, updatedData) {
     const headers = data[0];
     const idColIndex = headers.indexOf(idColumnName);
 
-    if (idColIndex === -1) throw new Error(`❌ 在 ${sheet.getName()} 中找不到 ID 欄位 ""。`);
+    if (idColIndex === -1) throw new Error(`❌ 在 ${sheet.getName()} 中找不到 ID 欄位 "${idColumnName}"。`);
 
     // 找到要更新的列
     const rowIndex = data.findIndex(row => row[idColIndex] === taskId);
@@ -3065,5 +3085,118 @@ function saveTaskConfiguration(taskType, taskId, updatedData) {
         }
     });
 
-    return `✅ 已成功更新  任務 [] 的設定。`;
+    return `✅ 已成功更新 ${taskType} 任務 [${taskId}] 的設定。`;
+}
+
+/**
+ * [新函式][管理後台用] 刪除一個指定的任務。
+ * @param {string} taskType - 任務類型 ('daily', 'skill', 'mission')。
+ * @param {string} taskId - 要刪除的任務 ID。
+ * @returns {string} 執行結果訊息。
+ */
+function deleteTask(taskType, taskId) {
+    if (!taskType || !taskId) {
+        throw new Error("❌ 缺少必要的參數 (taskType, taskId)。");
+    }
+
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    let sheet;
+    let idColumnName;
+
+    switch (taskType) {
+        case 'daily': sheet = ss.getSheetByName("DailyTasks"); idColumnName = "TaskID"; break;
+        case 'skill': sheet = ss.getSheetByName("SkillMaster"); idColumnName = "SkillID"; break;
+        case 'mission': sheet = ss.getSheetByName("MissionCenter"); idColumnName = "MissionID"; break;
+        default: throw new Error(`❌ 無效的任務類型: ${taskType}`);
+    }
+
+    if (!sheet) throw new Error(`❌ 找不到工作表: ${sheet.getName()}`);
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const idColIndex = headers.indexOf(idColumnName);
+
+    if (idColIndex === -1) throw new Error(`❌ 在 ${sheet.getName()} 中找不到 ID 欄位 "${idColumnName}"。`);
+
+    // 從後往前找，這樣刪除時才不會影響到尚未檢查的列的索引
+    for (let i = data.length - 1; i > 0; i--) {
+        if (data[i][idColIndex] === taskId) {
+            sheet.deleteRow(i + 1); // i 是 data 陣列的索引 (0-based)，工作表列號是 1-based
+            return `✅ 已成功刪除 ${taskType} 任務 [${taskId}]。`;
+        }
+    }
+
+    throw new Error(`❌ 在 ${sheet.getName()} 中找不到 ID 為 "${taskId}" 的任務可供刪除。`);
+}
+
+/**
+ * [新函式][管理後台用] 新增一個任務。
+ * @param {string} taskType - 任務類型 ('daily', 'skill', 'mission')。
+ * @param {object} taskData - 新任務的資料，至少需要包含 ID 和名稱。例如 { "TaskID": "D010", "任務名稱": "新任務" }
+ * @returns {string} 執行結果訊息。
+ */
+function createTask(taskType, taskData) {
+    if (!taskType || !taskData) {
+        throw new Error("❌ 缺少必要的參數 (taskType, taskData)。");
+    }
+
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    let sheet, idColumnName;
+
+    switch (taskType) {
+        case 'daily': sheet = ss.getSheetByName("DailyTasks"); idColumnName = "TaskID"; break;
+        case 'skill': sheet = ss.getSheetByName("SkillMaster"); idColumnName = "SkillID"; break;
+        case 'mission': sheet = ss.getSheetByName("MissionCenter"); idColumnName = "MissionID"; break;
+        default: throw new Error(`❌ 無效的任務類型: ${taskType}`);
+    }
+
+    if (!sheet) throw new Error(`❌ 找不到工作表: ${sheet.getName()}`);
+
+    const newId = taskData[idColumnName];
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const idColIndex = headers.indexOf(idColumnName);
+
+    // ✅【核心修改】如果前端沒有提供 ID，則自動產生一個。
+    if (!newId || String(newId).trim() === '') {
+        let prefix = '';
+        if (taskType === 'daily') {
+            prefix = 'T'; // 日常任務 (DailyTasks)
+        } else if (taskType === 'skill') {
+            prefix = 'S'; // 學習技能 (SkillMaster)
+        } else if (taskType === 'mission') {
+            // 根據前端傳來的「類型」決定前綴
+            const missionType = taskData['類型'];
+            prefix = (missionType === 'Daily') ? 'D' : 'A'; // D for Daily mission, A for Achievement mission
+        }
+        if (!prefix) throw new Error(`❌ 無法為類型 "${taskType}" (子類型: ${taskData['類型']}) 產生 ID 前綴。`);
+
+        const existingIds = data.slice(1).map(row => String(row[idColIndex] || '').trim());
+        let maxNum = 0;
+        existingIds.forEach(id => {
+            if (id.startsWith(prefix)) {
+                const num = parseInt(id.substring(1), 10);
+                if (!isNaN(num) && num > maxNum) {
+                    maxNum = num;
+                }
+            }
+        });
+        // 產生新 ID，例如 D004, S011
+        const generatedId = prefix + String(maxNum + 1).padStart(3, '0');
+        taskData[idColumnName] = generatedId; // 將產生的 ID 加回要寫入的資料中
+    }
+
+    // 建立新的一列
+    const newRow = headers.map(header => {
+        if (taskData.hasOwnProperty(header)) return taskData[header];
+        // 為關鍵欄位提供預設值
+        if (header === 'Effects' || header === '獎勵') return '{}';
+        if (header === 'TotalDoneCount' || header === 'StreakCount') return 0;
+        return ''; // 其他欄位預設為空
+    });
+
+    sheet.appendRow(newRow);
+
+    return `✅ 已成功在 ${sheet.getName()} 中新增任務 [${taskData[idColumnName]}]。`;
 }

@@ -21,9 +21,12 @@
       .reward-editor-row select { padding: 8px; flex-grow: 1; }
       .reward-editor-row input { width: 100px; padding: 8px; }
       .reward-editor-row button { background: #dc3545; color: white; border: none; border-radius: 50%; width: 28px; height: 28px; cursor: pointer; font-weight: bold; }
-      .task-actions button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; margin-top: 10px; }
+      .task-actions { display: flex; gap: 10px; align-items: center; margin-top: 15px; }
+      .task-actions button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; } /* ✅ 新增：按鈕基礎樣式 */
       .btn-add-reward { background-color: #17a2b8; color: white; }
+      .btn-create-task { font-size: 0.8em; vertical-align: middle; margin-left: 10px; padding: 5px 10px; cursor: pointer; } /* ✅ 新增：新增按鈕樣式 */
       .btn-save-task { background-color: #28a745; color: white; }
+      .btn-delete-task { background-color: #dc3545; color: white; margin-left: auto; } /* ✅ 新增：刪除按鈕樣式 */
     </style>
     <style>
       body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px; background-color: #f4f4f9; color: #333; font-size: 18px; }
@@ -246,6 +249,37 @@
     </div>
 
     <script>
+      // ✅ 新增：補上遺失的 showToast 函式
+      function showToast(message, duration = 3000) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.innerText = message;
+
+        toast.style.cssText = `
+          background: rgba(60, 60, 60, 0.9);
+          color: #fff;
+          padding: 10px 20px;
+          border-radius: 8px;
+          font-size: 16px;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          animation: adminFadeInOut ${duration / 1000 + 0.5}s ease forwards;
+        `;
+        container.appendChild(toast);
+        setTimeout(() => { toast.remove(); }, duration);
+      }
+
+      // 確保動畫樣式只被加入一次
+      if (!document.getElementById('admin-toast-animation')) {
+        const style = document.createElement('style');
+        style.id = 'admin-toast-animation';
+        style.innerHTML = `
+        @keyframes adminFadeInOut {
+          0%, 100% { opacity: 0; transform: translateY(10px); } 10% { opacity: 1; transform: translateY(0); } 90% { opacity: 1; transform: translateY(0); }
+        }`;
+        document.head.appendChild(style);
+      }
+
       // ✅ 新增：Tab 切換邏輯
       function switchTab(tabName) {
         document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
@@ -667,8 +701,6 @@
               container.innerHTML = `<h2>載入失敗</h2><p style="color:red;">${response.error}</p>`;
               return;
             }
-            // ✅【核心修正】將從後端取得的獎勵選項存到全域變數
-            window.REWARD_OPTIONS = response.rewardOptions;
             window.taskDataLoaded = true; // 標記已載入
             renderTaskEditors(response);
           })
@@ -684,21 +716,21 @@
         let html = '<h2>🔧 任務與獎勵管理</h2>';
 
         // 日常活動
-        html += '<h3>🧺 日常活動 (DailyTasks)</h3>';
+        html += `<h3>🧺 日常活動 (DailyTasks) <button class="btn-create-task" onclick="openCreateTaskModal('daily')">＋ 新增</button></h3>`;
         data.dailyTasks.forEach(task => {
-          html += createTaskEditor('daily', task.id, task.name, task.effects);
+          html += createTaskEditor('daily', task);
         });
 
         // 學習清單
-        html += '<h3>📖 學習清單 (SkillMaster)</h3>';
+        html += `<h3>📖 學習清單 (SkillMaster) <button class="btn-create-task" onclick="openCreateTaskModal('skill')">＋ 新增</button></h3>`;
         data.learningSkills.forEach(skill => {
-          html += createTaskEditor('skill', skill.SkillID, skill.SkillName, skill.Effects);
+          html += createTaskEditor('skill', skill);
         });
 
         // 任務中心
-        html += '<h3>📋 任務中心 (MissionCenter)</h3>';
+        html += `<h3>📋 任務中心 (MissionCenter) <button class="btn-create-task" onclick="openCreateTaskModal('mission')">＋ 新增</button></h3>`;
         data.missions.forEach(mission => {
-          html += createTaskEditor('mission', mission.id, mission.name, mission.rewardJson);
+          html += createTaskEditor('mission', mission);
         });
 
         container.innerHTML = html;
@@ -706,6 +738,14 @@
 
       // 建立單一任務的編輯器 HTML
       function createTaskEditor(taskType, taskId, taskName, effectsJson) {
+        // ✅【修正】確保函式能處理傳入整個物件的情況
+        const task = typeof taskId === 'object' ? taskId : null;
+        if (task) {
+          taskId = task.id || task.SkillID;
+          taskName = task.name || task.SkillName;
+          effectsJson = task.effects || task.Effects || task.rewardJson;
+        }
+
         let rewards = {};
         try {
           rewards = JSON.parse(effectsJson || '{}');
@@ -720,7 +760,8 @@
               <div class="task-actions">
                 <button class="btn-add-reward" onclick="addRewardRow('${editorId}', 'attribute')">＋ 新增屬性</button>
                 <button class="btn-add-reward" onclick="addRewardRow('${editorId}', 'item')" style="background-color: #007bff;">＋ 新增道具</button>
-                <button class="btn-save-task" onclick="saveTask('${taskType}', '${taskId}', '${editorId}')">💾 儲存變更</button>
+                <button class="btn-save-task" onclick="saveTask('${taskType}', '${taskId}', '${editorId}')">💾 儲存</button>
+                <button class="btn-delete-task" onclick="confirmDeleteTask('${taskType}', '${taskId}', '${taskName}')">🗑️ 刪除</button>
               </div>
           </div>
         `;
@@ -763,10 +804,10 @@
 
       // 新增一行空的獎勵編輯列
       function addRewardRow(editorId, type = 'attribute') {
-        const editorDiv = document.getElementById(editorId);
+        // ✅【核心修正】直接使用傳入的 type 參數，不再依賴按鈕文字
         const rewardType = (type === 'item') ? 'Items' : '';
-        const defaultValue = (type === 'item') ? 1 : 0; // 道具預設數量為 1，屬性為 0
-        editorDiv.insertAdjacentHTML('beforeend', createRewardRow(rewardType, defaultValue));
+        const defaultValue = (type === 'item') ? 1 : 0; // 道具預設數量為 1
+        document.getElementById(editorId).insertAdjacentHTML('beforeend', createRewardRow(rewardType, defaultValue, ''));
       }
 
       // 儲存變更
@@ -778,13 +819,16 @@
         rewardRows.forEach(row => {
           const select = row.querySelector('select');
           const input = row.querySelector('input');
+          if (!select || !input) return; // 安全檢查
           const selectedId = select.value;
-          const value = parseInt(input.value, 10);
-          if (!selectedId || isNaN(value)) return;
 
           if (select.dataset.type === 'item') {
+            const value = parseInt(input.value, 10); // 道具數量必須是整數
+            if (!selectedId || isNaN(value) || value <= 0) return;
             newRewards.Items.push({ ItemID: selectedId, Quantity: value });
           } else {
+            const value = parseFloat(input.value); // 屬性獎勵可以是小數
+            if (!selectedId || isNaN(value)) return;
             newRewards[selectedId] = (newRewards[selectedId] || 0) + value;
           }
         });
@@ -799,6 +843,91 @@
           .withFailureHandler(err => alert('儲存失敗: ' + err.message))
           .saveTaskConfiguration(taskType, taskId, updatedData);
       }
+
+      /**
+       * [新函式] 跳出確認視窗，詢問是否刪除任務
+       */
+      function confirmDeleteTask(taskType, taskId, taskName) {
+          // 使用瀏覽器內建的 confirm 對話框進行二次確認
+          const confirmation = confirm(`您確定要永久刪除任務「${taskName} (ID: ${taskId})」嗎？\n\n警告：此操作無法復原！`);
+          
+          if (confirmation) {
+              showToast('正在刪除任務...');
+              google.script.run
+                  .withSuccessHandler(msg => {
+                      showToast(msg);
+                      // 刪除成功後，重新載入整個任務管理介面以反映變更
+                      loadTaskManagement();
+                  })
+                  .withFailureHandler(err => {
+                      alert('刪除失敗: ' + err.message);
+                  })
+                  .deleteTask(taskType, taskId);
+          }
+      }
+    </script>
+    <!-- ✅ 新增：新增任務 Modal 及相關 JS -->
+    <div id="create-task-modal" class="modal-overlay">
+      <div class="modal-content">
+        <button class="modal-close-btn" onclick="closeAllModals()">×</button>
+        <h1 id="create-task-modal-title">新增任務</h1>
+        <form id="create-task-form">
+            <input type="hidden" id="create-task-type">
+            <div class="form-group">
+                <label for="create-task-name">任務名稱</label>
+                <input type="text" id="create-task-name" required>
+            </div>
+            <div id="create-mission-type-group" class="form-group" style="display:none;">
+                <label for="create-mission-type">任務中心類型</label>
+                <select id="create-mission-type" style="width: 100%; padding: 15px; font-size: 1.1em;">
+                    <option value="Daily">每日重置任務 (D 開頭)</option>
+                    <option value="Achievement">一次性/長期成就 (A 開頭)</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="modal-approve-btn">✅ 確認新增</button>
+            </div>
+        </form>
+      </div>
+    </div>
+    <script>
+      function openCreateTaskModal(taskType) {
+        const modal = document.getElementById('create-task-modal');
+        document.getElementById('create-task-modal-title').textContent = `新增 ${taskType.charAt(0).toUpperCase() + taskType.slice(1)} 任務`;
+        document.getElementById('create-task-type').value = taskType;
+        document.getElementById('create-task-name').value = '';
+        document.getElementById('create-mission-type-group').style.display = (taskType === 'mission') ? 'block' : 'none';
+        modal.style.display = 'flex';
+        document.getElementById('create-task-name').focus();
+      }
+
+      document.getElementById('create-task-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const taskType = document.getElementById('create-task-type').value;
+        const newName = document.getElementById('create-task-name').value.trim();
+        if (!newName) {
+          alert('任務名稱不可為空！');
+          return;
+        }
+
+        const taskData = {};
+        if (taskType === 'daily') { taskData['任務名稱'] = newName; }
+        else if (taskType === 'skill') { taskData['SkillName'] = newName; }
+        else if (taskType === 'mission') {
+          taskData['任務名稱'] = newName;
+          taskData['類型'] = document.getElementById('create-mission-type').value;
+        }
+
+        showToast('正在新增任務...');
+        google.script.run
+          .withSuccessHandler(msg => {
+            showToast(msg);
+            closeAllModals();
+            loadTaskManagement(); // 重新載入任務列表
+          })
+          .withFailureHandler(err => { alert('新增失敗: ' + err.message); })
+          .createTask(taskType, taskData);
+      });
     </script>
   </body>
 </html>
