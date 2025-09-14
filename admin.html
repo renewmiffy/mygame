@@ -691,7 +691,7 @@
       // --- ✅ 新增：任務管理相關的 JavaScript ---
 
       // 載入任務管理介面
-      function loadTaskManagement() {
+      function loadTaskManagement(callback) { // 👈 (2) 接收回呼函式
         const container = document.getElementById('task-management-section');
         container.innerHTML = '<h2>🔧 任務與獎勵管理</h2><p>正在從 Google Sheets 載入所有任務設定...</p>';
 
@@ -702,7 +702,17 @@
               return;
             }
             window.taskDataLoaded = true; // 標記已載入
+            // ✅【新功能】將任務和技能列表存到全域，供條件編輯器使用
+            window.ALL_DAILY_TASKS = response.dailyTasks || [];
+            window.ALL_SKILLS = response.learningSkills || [];
+
             renderTaskEditors(response);
+
+            // ✅【核心修正】在 DOM 渲染完成後，執行回呼函式
+            if (typeof callback === 'function') { 
+              // 使用 setTimeout 確保瀏覽器有足夠時間渲染畫面
+              setTimeout(callback, 0); 
+            }
           })
           .withFailureHandler(err => {
             container.innerHTML = `<h2>後端呼叫失敗</h2><p style="color:red;">${err.message}</p>`;
@@ -713,38 +723,54 @@
       // 渲染所有任務的編輯器
       function renderTaskEditors(data) {
         const container = document.getElementById('task-management-section');
-        let html = '<h2>🔧 任務與獎勵管理</h2>';
+        
+        // 1. 建立主結構 (標題、子分頁按鈕、子分頁面板容器)
+        container.innerHTML = `
+            <h2>🔧 任務與獎勵管理</h2>
+            <div class="tabs secondary-tabs">
+                <button class="tab-button active" onclick="switchTaskManagementTab('daily')">🧺 日常活動</button>
+                <button class="tab-button" onclick="switchTaskManagementTab('skill')">📖 學習清單</button>
+                <button class="tab-button" onclick="switchTaskManagementTab('mission')">📋 任務中心</button>
+            </div>
+            <div id="task-management-panels">
+                <div id="panel-daily" class="tab-panel active"></div>
+                <div id="panel-skill" class="tab-panel"></div>
+                <div id="panel-mission" class="tab-panel"></div>
+            </div>
+        `;
 
-        // 日常活動
-        html += `<h3>🧺 日常活動 (DailyTasks) <button class="btn-create-task" onclick="openCreateTaskModal('daily')">＋ 新增</button></h3>`;
+        // 2. 取得各子分頁面板的容器
+        const dailyPanel = document.getElementById('panel-daily');
+        const skillPanel = document.getElementById('panel-skill');
+        const missionPanel = document.getElementById('panel-mission');
+
+        // 3. 渲染日常活動面板
+        let dailyHtml = `<div style="display: flex; justify-content: flex-end; padding: 10px 0;"><button class="btn-create-task" onclick="openCreateTaskModal('daily')">＋ 新增日常活動</button></div>`;
         data.dailyTasks.forEach(task => {
-          html += createTaskEditor('daily', task);
+          dailyHtml += createTaskEditor('daily', task);
         });
+        dailyPanel.innerHTML = dailyHtml;
 
-        // 學習清單
-        html += `<h3>📖 學習清單 (SkillMaster) <button class="btn-create-task" onclick="openCreateTaskModal('skill')">＋ 新增</button></h3>`;
+        // 4. 渲染學習清單面板
+        let skillHtml = `<div style="display: flex; justify-content: flex-end; padding: 10px 0;"><button class="btn-create-task" onclick="openCreateTaskModal('skill')">＋ 新增學習項目</button></div>`;
         data.learningSkills.forEach(skill => {
-          html += createTaskEditor('skill', skill);
+          skillHtml += createTaskEditor('skill', skill);
         });
+        skillPanel.innerHTML = skillHtml;
 
-        // 任務中心
-        html += `<h3>📋 任務中心 (MissionCenter) <button class="btn-create-task" onclick="openCreateTaskModal('mission')">＋ 新增</button></h3>`;
+        // 5. 渲染任務中心面板
+        let missionHtml = `<div style="display: flex; justify-content: flex-end; padding: 10px 0;"><button class="btn-create-task" onclick="openCreateTaskModal('mission')">＋ 新增任務</button></div>`;
         data.missions.forEach(mission => {
-          html += createTaskEditor('mission', mission);
+          missionHtml += createTaskEditor('mission', mission);
         });
-
-        container.innerHTML = html;
+        missionPanel.innerHTML = missionHtml;
       }
 
       // 建立單一任務的編輯器 HTML
-      function createTaskEditor(taskType, taskId, taskName, effectsJson) {
-        // ✅【修正】確保函式能處理傳入整個物件的情況
-        const task = typeof taskId === 'object' ? taskId : null;
-        if (task) {
-          taskId = task.id || task.SkillID;
-          taskName = task.name || task.SkillName;
-          effectsJson = task.effects || task.Effects || task.rewardJson;
-        }
+      function createTaskEditor(taskType, task) {
+        const taskId = task.id || task.SkillID;
+        const taskName = task.name || task.SkillName;
+        const effectsJson = task.effects || task.Effects || task.rewardJson;
 
         let rewards = {};
         try {
@@ -753,14 +779,48 @@
 
         const editorId = `reward-editor-${taskType}-${taskId}`;
 
+        // ✅ 新增：可編輯的任務名稱
+        const nameInputId = `name-input-${taskType}-${taskId}`;
+        const nameEditorHtml = `
+            <div class="editable-field">
+                <label>任務名稱</label>
+                <input type="text" id="${nameInputId}" value="${taskName}">
+                <span style="color: #888; font-size: 0.9em; white-space: nowrap;">(ID: ${taskId})</span>
+            </div>
+        `;
+
+        // ✅ 新增：任務條件編輯區塊 (僅限 MissionCenter)
+        let conditionEditorHtml = '';
+        if (taskType === 'mission') {
+          const conditionTypes = ['DailyTaskDoneCount', 'SkillsLearnedTodayCount', 'TaskDoneToday', 'TaskDoneCount', 'TotalDoneCount', 'StreakCount'];
+          // ✅【核心修改】建立中文對照表
+          const conditionTypeMap = {
+            'DailyTaskDoneCount': '每日任務完成數', 'SkillsLearnedTodayCount': '今日學習技能數',
+            'TaskDoneToday': '完成指定日常', 'TaskDoneCount': '指定日常總次數',
+            'TotalDoneCount': '指定學習總次數', 'StreakCount': '指定學習連續天數'
+          };
+          // 使用對照表產生選項
+          const optionsHtml = conditionTypes.map(ct => `<option value="${ct}" ${task.conditionType === ct ? 'selected' : ''}>${conditionTypeMap[ct] || ct}</option>`).join('');
+          const paramEditorHtml = generateConditionParamHtml(task.conditionType, task.conditionParam);
+          conditionEditorHtml = `
+            <div class="editable-field">
+              <label>觸發條件</label>
+              <select id="condition-type-${taskId}" onchange="updateConditionEditor(this, '${taskId}')">${optionsHtml}</select>
+            </div>
+            <div id="condition-param-editor-${taskId}">${paramEditorHtml}</div>
+          `;
+        }
+
         return `
           <div class="task-card">
-              <h4>${taskName} <span style="font-weight:normal; color:#888;">(ID: ${taskId})</span></h4>
+              ${nameEditorHtml}
+              ${conditionEditorHtml}
+              <hr style="border: none; border-top: 1px solid #eee; margin: 15px 0;">
               <div id="${editorId}">${renderRewardEditor(rewards)}</div>
               <div class="task-actions">
                 <button class="btn-add-reward" onclick="addRewardRow('${editorId}', 'attribute')">＋ 新增屬性</button>
                 <button class="btn-add-reward" onclick="addRewardRow('${editorId}', 'item')" style="background-color: #007bff;">＋ 新增道具</button>
-                <button class="btn-save-task" onclick="saveTask('${taskType}', '${taskId}', '${editorId}')">💾 儲存</button>
+                <button class="btn-save-task" onclick="saveTask('${taskType}', '${taskId}')">💾 儲存變更</button>
                 <button class="btn-delete-task" onclick="confirmDeleteTask('${taskType}', '${taskId}', '${taskName}')">🗑️ 刪除</button>
               </div>
           </div>
@@ -811,7 +871,9 @@
       }
 
       // 儲存變更
-      function saveTask(taskType, taskId, editorId) {
+      function saveTask(taskType, taskId) {
+        const editorId = `reward-editor-${taskType}-${taskId}`;
+        const nameInputId = `name-input-${taskType}-${taskId}`;
         const editorDiv = document.getElementById(editorId);
         const rewardRows = editorDiv.querySelectorAll('.reward-editor-row');
         const newRewards = { Items: [] };
@@ -835,7 +897,38 @@
 
         if (newRewards.Items.length === 0) delete newRewards.Items;
         const effectsJsonString = JSON.stringify(newRewards);
-        const updatedData = { [taskType === 'mission' ? '獎勵' : 'Effects']: effectsJsonString };
+        
+        // ✅ 建立要傳送到後端的資料包
+        const updatedData = {};
+
+        // 1. 加入獎勵資料
+        updatedData[taskType === 'mission' ? '獎勵' : 'Effects'] = effectsJsonString;
+
+        // 2. 加入任務名稱
+        const newName = document.getElementById(nameInputId).value;
+        if (newName) {
+          updatedData[taskType === 'skill' ? 'SkillName' : '任務名稱'] = newName;
+        }
+
+        // 3. 如果是 mission，加入條件資料
+        if (taskType === 'mission') {
+          const conditionTypeSelect = document.getElementById(`condition-type-${taskId}`);
+          const conditionType = conditionTypeSelect.value;
+          updatedData['條件類型'] = conditionType;
+
+          // ✅【核心修改】從新的編輯器介面組合回條件參數字串
+          const paramEditor = document.getElementById(`condition-param-editor-${taskId}`);
+          const paramIdSelect = paramEditor.querySelector('select[data-editor="param-id"]');
+          const paramValueInput = paramEditor.querySelector('input[data-editor="param-value"]');
+
+          if (paramIdSelect && paramValueInput) { // 格式為 "ID:Value"
+            updatedData['條件參數'] = `${paramIdSelect.value}:${paramValueInput.value}`;
+          } else if (paramValueInput) { // 格式只有 "Value"
+            updatedData['條件參數'] = paramValueInput.value;
+          } else if (paramIdSelect) { // 格式只有 "ID"
+            updatedData['條件參數'] = paramIdSelect.value;
+          }
+        }
 
         showToast('正在儲存變更...');
         google.script.run
@@ -864,6 +957,90 @@
                   })
                   .deleteTask(taskType, taskId);
           }
+      }
+
+      /**
+       * [新函式] 切換任務管理中的子分頁
+       */
+      function switchTaskManagementTab(taskType) {
+        // 隱藏所有面板
+        document.querySelectorAll('#task-management-panels .tab-panel').forEach(panel => {
+          panel.classList.remove('active');
+        });
+        // 移除所有按鈕的 active 狀態
+        document.querySelectorAll('#task-management-section .secondary-tabs .tab-button').forEach(btn => {
+          btn.classList.remove('active');
+        });
+
+        // 顯示目標面板
+        document.getElementById(`panel-${taskType}`).classList.add('active');
+        // 啟用目標按鈕
+        document.querySelector(`#task-management-section .secondary-tabs .tab-button[onclick="switchTaskManagementTab('${taskType}')"]`).classList.add('active');
+      }
+
+      /**
+       * [新函式] 當條件類型改變時，更新參數編輯器的介面
+       */
+      function updateConditionEditor(selectElement, taskId) {
+        const selectedType = selectElement.value;
+        const container = document.getElementById(`condition-param-editor-${taskId}`);
+        container.innerHTML = generateConditionParamHtml(selectedType, ''); // 傳入空參數以產生預設介面
+      }
+
+      /**
+       * [新函式] 根據條件類型和現有參數，產生對應的 HTML 編輯介面
+       */
+      function generateConditionParamHtml(conditionType, conditionParam) {
+        // ✅【核心修正】更穩健地解析參數
+        let paramId = '';
+        let paramValue = '';
+        const paramStr = String(conditionParam || '');
+        const parts = paramStr.split(':');
+        paramId = parts[0];
+        paramValue = parts.length > 1 ? parts[1] : '';
+
+        let html = '';
+
+        switch (conditionType) {
+          case 'TaskDoneToday':
+            const taskOptions = (window.ALL_DAILY_TASKS || []).map(t => `<option value="${t.id}" ${paramId === t.id ? 'selected' : ''}>${t.name}</option>`).join('');
+            html = `
+              <div class="editable-field">
+                  <label>目標任務</label>
+                  <select data-editor="param-id">${taskOptions}</select>
+              </div>`;
+            break;
+
+          case 'TaskDoneCount':
+          case 'TotalDoneCount':
+          case 'StreakCount':
+            const isSkill = conditionType.includes('DoneCount') || conditionType.includes('Streak');
+            const sourceList = isSkill ? (window.ALL_SKILLS || []) : (window.ALL_DAILY_TASKS || []);
+            const idField = isSkill ? 'SkillID' : 'id';
+            const nameField = isSkill ? 'SkillName' : 'name';
+            const options = sourceList.map(item => `<option value="${item[idField]}" ${paramId === item[idField] ? 'selected' : ''}>${item[nameField]}</option>`).join('');
+            
+            html = `
+              <div class="editable-field">
+                  <label>目標${isSkill ? '技能' : '任務'}</label>
+                  <select data-editor="param-id">${options}</select>
+              </div>
+              <div class="editable-field">
+                  <label>目標次數</label>
+                  <input type="number" data-editor="param-value" value="${paramValue || 1}" min="1">
+              </div>`;
+            break;
+
+          default: // DailyTaskDoneCount, SkillsLearnedTodayCount
+            // ✅【核心修正】對於只有數字的條件，直接使用 paramStr
+            html = `
+              <div class="editable-field">
+                  <label>目標次數</label>
+                  <input type="number" data-editor="param-value" value="${paramStr || 1}" min="1">
+              </div>`;
+            break;
+        }
+        return html;
       }
     </script>
     <!-- ✅ 新增：新增任務 Modal 及相關 JS -->
@@ -923,7 +1100,12 @@
           .withSuccessHandler(msg => {
             showToast(msg);
             closeAllModals();
-            loadTaskManagement(); // 重新載入任務列表
+            // ✅【核心修改】重新載入後，捲動到對應面板的底部
+            loadTaskManagement(() => {
+              setTimeout(() => {
+                document.getElementById(`panel-${taskType}`).scrollIntoView({ behavior: 'smooth', block: 'end' });
+              }, 300); // 等待一小段時間讓 DOM 渲染完成
+            });
           })
           .withFailureHandler(err => { alert('新增失敗: ' + err.message); })
           .createTask(taskType, taskData);

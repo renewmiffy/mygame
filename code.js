@@ -447,6 +447,17 @@ function getMissionList() {
       claimed = !!lastClaimed && !repeatable;
     }
 
+    // ✅【新功能】條件類型中文化
+    const conditionTypeMap = {
+      'DailyTaskDoneCount': '每日任務完成數',
+      'SkillsLearnedTodayCount': '今日學習技能數',
+      'TaskDoneToday': '完成指定日常',
+      'TaskDoneCount': '指定日常總次數',
+      'TotalDoneCount': '指定學習總次數',
+      'StreakCount': '指定學習連續天數'
+    };
+    const conditionDisplayName = conditionTypeMap[conditionType] || conditionType;
+
     let rewardText = ""; // 用於前端顯示的格式化文字
     const rewardJsonString = getMissionField(row, "獎勵") || "{}";
     try {
@@ -484,6 +495,7 @@ function getMissionList() {
       claimed: claimed,
       displayOrder: displayOrder,
       rowIndex: i,
+      conditionDisplayName: conditionDisplayName, // ✅ 新增：回傳中文條件名稱
       conditionType: conditionType, // ✅ 新增：回傳條件類型
       conditionParam: param,        // ✅ 新增：回傳條件參數
       type: type, // 加入類型給一鍵領取判斷用
