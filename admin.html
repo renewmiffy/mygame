@@ -109,6 +109,7 @@
       <button class="tab-button" onclick="switchTab('redemption')">🎁 兌換核銷</button>
       <button class="tab-button" onclick="switchTab('achievement')">🏆 成就審核</button>
       <button class="tab-button" onclick="switchTab('tasks')">🔧 任務管理</button>
+      <button class="tab-button" onclick="switchTab('items')">📦 道具管理</button>
     </div>
 
     <!-- ✅ 新增：Tab 面板容器 -->
@@ -184,6 +185,88 @@
       <!-- 4. 任務管理面板 -->
       <div id="panel-tasks" class="tab-panel">
         <div id="task-management-section" class="container task-management-section"></div>
+      </div>
+
+      <!-- 5. 道具管理面板 -->
+      <div id="panel-items" class="tab-panel">
+        <div class="container">
+          <h1>📦 新增道具到 ItemMaster</h1>
+          <form id="create-item-form">
+            <fieldset style="border: 1px solid #007bff; padding: 15px; border-radius: 5px;">
+              <legend style="color: #007bff; font-weight: bold;">基本資訊</legend>
+              <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+                <label for="item-id">道具 ID (ItemID) - 英文/數字，不可重複</label>
+                <input type="text" id="item-id" required readonly style="flex-grow: 1; background-color: #e9ecef;">
+                <button type="button" onclick="fetchNextItemId()" style="padding: 15px; font-size: 1.1em; cursor: pointer;">🔄</button>
+              </div>
+              <div class="form-group">
+                <label for="item-name">道具名稱</label>
+                <input type="text" id="item-name" required>
+              </div>
+              <div class="form-group">
+                <label for="item-type">道具類型</label>
+                <select id="item-type" onchange="toggleItemTypeFields()" style="width: 100%; padding: 15px; font-size: 1.1em;">
+                  <option value="Consumable">消耗品 (Consumable)</option>
+                  <option value="TreasureChest">寶箱 (TreasureChest)</option>
+                  <option value="FixedBundle">固定內容禮包 (FixedBundle)</option>
+                  <option value="CurrencyPouch">貨幣包 (CurrencyPouch)</option>
+                  <option value="BuffItem">時效性 Buff (BuffItem)</option>
+                  <option value="Redeemable">實體兌換券 (Redeemable)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="item-rarity">稀有度 (Rarity) - 0~5</label>
+                <input type="number" id="item-rarity" min="0" max="5" value="0" style="width: calc(100% - 20px);">
+                <small style="color: #6c757d; display: block; margin-top: 5px;">(設為 0 表示此道具不會被寶箱的「稀有度」類型抽中)</small>
+              </div>
+            </fieldset>
+
+            <fieldset style="margin-top: 20px; padding: 15px; border-radius: 5px;">
+              <legend>效果與說明</legend>
+              <div class="form-group">
+                <label for="item-description">說明 (Description)</label>
+                <textarea id="item-description" rows="3"></textarea>
+              </div>
+              <!-- ✅ 新的視覺化效果編輯器 -->
+              <div class="form-group" id="effect-editor-container">
+                <label>效果 (Effect)</label>
+                <div id="effect-editor-consumable" class="effect-editor-panel">
+                  <div class="reward-editor-rows-container"></div>
+                  <button type="button" class="btn-add-reward" onclick="addEffectRow('consumable', 'attribute')">＋ 新增屬性效果</button>
+                </div>
+                <div id="effect-editor-bundle" class="effect-editor-panel" style="display:none;">
+                  <div class="reward-editor-rows-container"></div>
+                  <button type="button" class="btn-add-reward" onclick="addEffectRow('bundle', 'item')" style="background-color: #007bff;">＋ 新增禮包道具</button>
+                </div>
+                <div id="effect-editor-buff" class="effect-editor-panel" style="display:none;">
+                  <div class="form-group"><label>持續時間 (小時)</label><input type="number" id="buff-duration" min="1" value="1"></div>
+                  <div class="form-group"><label>增益效果</label><div class="reward-editor-rows-container"></div><button type="button" class="btn-add-reward" onclick="addEffectRow('buff', 'buff')">＋ 新增 Buff 效果</button></div>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset id="chest-fields" style="display:none; margin-top: 20px; padding: 15px; border-radius: 5px; border-color: #ffc107;">
+              <legend style="color: #856404; font-weight: bold;">寶箱專用設定</legend>
+              <div class="form-group">
+                <label for="item-loottable">獎池 (LootTableJSON)</label>
+                <textarea id="item-loottable" rows="5" placeholder='[{"Type":"ItemRarity", "Rarity":1, "Weight":70}, {"Type":"Currency", "RewardID":"Coins", "Quantity":100, "Weight":30}]'></textarea>
+              </div>
+              <div class="form-group"><label for="item-pity-rarity">保底稀有度 (PityRarity)</label><input type="number" id="item-pity-rarity" min="1" value="3"></div>
+              <div class="form-group"><label for="item-pity-counter">保底抽數 (PityCounter)</label><input type="number" id="item-pity-counter" min="1" value="10"></div>
+            </fieldset>
+
+            <fieldset style="margin-top: 20px; padding: 15px; border-radius: 5px;">
+              <legend>交易屬性</legend>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div><div class="form-group"><label for="item-buy-price">金幣購買價 (BuyPrice)</label><input type="number" id="item-buy-price" min="0"></div><div class="form-group"><label for="item-sell-price">金幣販售價 (SellPrice)</label><input type="number" id="item-sell-price" min="0"></div></div>
+                <div><div class="form-group"><label for="item-honor-buy-price">榮譽購買價 (HonorBuyPrice)</label><input type="number" id="item-honor-buy-price" min="0"></div><div class="form-group"><label for="item-honor-sell-price">榮譽販售價 (HonorSellPrice)</label><input type="number" id="item-honor-sell-price" min="0"></div></div>
+              </div>
+              <div style="display: flex; gap: 30px; margin-top: 10px;"><label><input type="checkbox" id="item-purchasable" style="width:auto; margin-right: 8px;">可購買 (IsPurchasable)</label><label><input type="checkbox" id="item-sellable" style="width:auto; margin-right: 8px;">可販售 (IsSellable)</label><label><input type="checkbox" id="item-stackable" checked style="width:auto; margin-right: 8px;">可堆疊 (IsStackable)</label></div>
+            </fieldset>
+            <button type="submit" class="send-btn" style="margin-top: 25px;">✨ 新增道具到 ItemMaster</button>
+          </form>
+          <div id="create-item-message" class="modal-message" style="display:none;"></div>
+        </div>
       </div>
     </div>
 
@@ -291,6 +374,13 @@
         // 如果是第一次點擊任務管理，就載入資料
         if (tabName === 'tasks' && !window.taskDataLoaded) {
           loadTaskManagement();
+        }
+        // ✅ 修改：切換到道具管理時，清空訊息並取得新 ID
+        if (tabName === 'items') {
+          document.getElementById('create-item-message').style.display = 'none';
+          if (!document.getElementById('item-id').value) {
+            fetchNextItemId();
+          }
         }
       }
 
@@ -1056,6 +1146,167 @@
         }
         return html;
       }
+    </script>
+    <!-- ✅ 新增：道具管理相關 JS -->
+    <script>
+      // 取得下一個可用的道具 ID
+      function fetchNextItemId() {
+        const input = document.getElementById('item-id');
+        const oldVal = input.value;
+        input.value = '查詢中...';
+        google.script.run
+          .withSuccessHandler(id => { input.value = id; })
+          .withFailureHandler(err => { alert('無法取得新ID: ' + err.message); input.value = oldVal; })
+          .getNextAvailableItemID();
+      }
+
+      // 根據道具類型切換顯示的欄位
+      function toggleItemTypeFields() {
+        const itemType = document.getElementById('item-type').value;
+        const chestFields = document.getElementById('chest-fields');
+        chestFields.style.display = (itemType === 'TreasureChest') ? 'block' : 'none';
+
+        // 切換效果編輯器
+        document.querySelectorAll('.effect-editor-panel').forEach(p => p.style.display = 'none');
+        if (itemType === 'Consumable' || itemType === 'CurrencyPouch') {
+          document.getElementById('effect-editor-consumable').style.display = 'block';
+        } else if (itemType === 'FixedBundle') {
+          document.getElementById('effect-editor-bundle').style.display = 'block';
+        } else if (itemType === 'BuffItem') {
+          document.getElementById('effect-editor-buff').style.display = 'block';
+        }
+      }
+
+      // 新增一行效果
+      function addEffectRow(panelType, effectType) {
+        const container = document.querySelector(`#effect-editor-${panelType} .reward-editor-rows-container`);
+        container.insertAdjacentHTML('beforeend', createEffectRowHtml(effectType));
+      }
+
+      // 產生單行效果的 HTML
+      function createEffectRowHtml(effectType, selectedId = '', value = '') {
+        let optionsHtml = '<option value="">-- 請選擇 --</option>';
+        let valuePlaceholder = '數值';
+        let valueInput = `<input type="number" value="${value}" placeholder="${valuePlaceholder}">`;
+
+        if (effectType === 'attribute') {
+          optionsHtml += (window.REWARD_OPTIONS.attributes || []).map(opt =>
+            `<option value="${opt.id}" ${opt.id === selectedId ? 'selected' : ''}>${opt.name}</option>`
+          ).join('');
+        } else if (effectType === 'item') {
+          optionsHtml += (window.REWARD_OPTIONS.items || []).map(opt =>
+            `<option value="${opt.id}" ${opt.id === selectedId ? 'selected' : ''}>${opt.name}</option>`
+          ).join('');
+          valueInput = `<input type="number" min="1" value="${value || 1}" placeholder="${valuePlaceholder}">`;
+        } else if (effectType === 'buff') {
+          const buffOptions = [
+            {id: 'CoinBonusPercent', name: '金幣獲取加成 (%)'},
+            {id: 'HonorBonusPercent', name: '榮譽獲取加成 (%)'},
+            {id: 'ShopDiscountPercent', name: '商店折扣 (%)'}
+          ];
+          optionsHtml += buffOptions.map(opt =>
+            `<option value="${opt.id}" ${opt.id === selectedId ? 'selected' : ''}>${opt.name}</option>`
+          ).join('');
+        }
+
+        return `
+          <div class="reward-editor-row" data-effect-type="${effectType}">
+              <select>${optionsHtml}</select>
+              ${valueInput}
+              <button type="button" onclick="this.parentElement.remove()">－</button>
+          </div>
+        `;
+      }
+
+      // 從視覺化編輯器收集資料並產生 Effect JSON 字串
+      function buildEffectJson() {
+        const itemType = document.getElementById('item-type').value;
+        const effectObject = {};
+
+        if (itemType === 'Consumable' || itemType === 'CurrencyPouch') {
+          document.querySelectorAll('#effect-editor-consumable .reward-editor-row').forEach(row => {
+            const key = row.querySelector('select').value;
+            const value = parseFloat(row.querySelector('input').value);
+            if (key && !isNaN(value)) effectObject[key] = value;
+          });
+        } else if (itemType === 'FixedBundle') {
+          effectObject.Items = [];
+          document.querySelectorAll('#effect-editor-bundle .reward-editor-row').forEach(row => {
+            const itemId = row.querySelector('select').value;
+            const quantity = parseInt(row.querySelector('input').value);
+            if (itemId && quantity > 0) effectObject.Items.push({ ItemID: itemId, Quantity: quantity });
+          });
+        } else if (itemType === 'BuffItem') {
+          effectObject.type = 'buff';
+          effectObject.duration_hours = parseInt(document.getElementById('buff-duration').value) || 1;
+          effectObject.effects = {};
+          document.querySelectorAll('#effect-editor-buff .reward-editor-row').forEach(row => {
+            const key = row.querySelector('select').value;
+            const value = parseFloat(row.querySelector('input').value);
+            if (key && !isNaN(value)) effectObject.effects[key] = value;
+          });
+        }
+        return Object.keys(effectObject).length > 0 ? JSON.stringify(effectObject, null, 2) : '';
+      }
+
+      document.getElementById('create-item-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const msgDiv = document.getElementById('create-item-message');
+        const submitBtn = this.querySelector('button[type="submit"]');
+
+        // 收集表單資料
+        const effectJson = buildEffectJson(); // 從新的視覺化編輯器建立 JSON
+
+        const itemData = {
+          ItemID: document.getElementById('item-id').value.trim(),
+          ItemName: document.getElementById('item-name').value.trim(),
+          ItemType: document.getElementById('item-type').value,
+          Rarity: document.getElementById('item-rarity').value,
+          Description: document.getElementById('item-description').value,
+          Effect: effectJson, // 使用新產生的 JSON
+          IsStackable: document.getElementById('item-stackable').checked,
+          IsSellable: document.getElementById('item-sellable').checked,
+          BuyPrice: document.getElementById('item-buy-price').value,
+          SellPrice: document.getElementById('item-sell-price').value,
+          HonorBuyPrice: document.getElementById('item-honor-buy-price').value,
+          HonorSellPrice: document.getElementById('item-honor-sell-price').value,
+          IsPurchasable: document.getElementById('item-purchasable').checked,
+          LootTableJSON: document.getElementById('item-loottable').value,
+          PityRarity: document.getElementById('item-pity-rarity').value,
+          PityCounter: document.getElementById('item-pity-counter').value,
+        };
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = '新增中...';
+        msgDiv.style.display = 'none';
+
+        google.script.run
+          .withSuccessHandler(function(response) {
+            msgDiv.textContent = response;
+            msgDiv.style.backgroundColor = '#d4edda';
+            msgDiv.style.color = '#155724';
+            msgDiv.style.display = 'block';
+            document.getElementById('create-item-form').reset(); // 清空表單
+            // 清空所有效果編輯器
+            document.querySelectorAll('.reward-editor-rows-container').forEach(c => c.innerHTML = '');
+            // 重設欄位可見度
+            toggleItemTypeFields();
+            // 取得下一個 ID
+            fetchNextItemId();
+
+            submitBtn.disabled = false;
+            submitBtn.textContent = '✨ 新增道具到 ItemMaster';
+          })
+          .withFailureHandler(function(error) {
+            msgDiv.textContent = "錯誤：" + error.message;
+            msgDiv.style.backgroundColor = '#f8d7da';
+            msgDiv.style.color = '#721c24';
+            msgDiv.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.textContent = '✨ 新增道具到 ItemMaster';
+          })
+          .createItemMaster(itemData);
+      });
     </script>
     <!-- ✅ 新增：新增任務 Modal 及相關 JS -->
     <div id="create-task-modal" class="modal-overlay">

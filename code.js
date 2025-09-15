@@ -3216,3 +3216,67 @@ function createTask(taskType, taskData) {
 
     return `✅ 已成功在 ${sheet.getName()} 中新增任務 [${taskData[idColumnName]}]。`;
 }
+
+/**
+ * [新函式][管理後台用] 新增一個道具到 ItemMaster。
+ * @param {object} itemData - 新道具的資料物件。
+ * @returns {string} 執行結果訊息。
+ */
+function createItemMaster(itemData) {
+  // 1. 基本驗證
+  if (!itemData || !itemData.ItemID || String(itemData.ItemID).trim() === '') {
+    throw new Error("❌ 道具 ID (ItemID) 為必填項目。");
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  if (!itemSheet) {
+    throw new Error("❌ 找不到 ItemMaster 工作表。");
+  }
+
+  const data = itemSheet.getDataRange().getValues();
+  const headers = data[0];
+  const idColIndex = headers.indexOf("ItemID");
+
+  // 2. 檢查 ID 是否重複
+  const idExists = data.slice(1).some(row => row[idColIndex] === itemData.ItemID);
+  if (idExists) {
+    throw new Error(`❌ 道具 ID "${itemData.ItemID}" 已存在，請使用不同的 ID。`);
+  }
+
+  // 3. 根據標頭順序建立新的一列
+  const newRow = headers.map(header => itemData[header] ?? '');
+
+  itemSheet.appendRow(newRow);
+
+  return `✅ 已成功在 ItemMaster 中新增道具 [${itemData.ItemName || itemData.ItemID}]。`;
+}
+
+/**
+ * [新函式][管理後台用] 取得下一個可用的道具 ID。
+ * 會掃描 ItemMaster，找到 I 開頭的最大編號，並回傳下一個。
+ * @returns {string} 下一個可用的道具 ID，例如 "I001"。
+ */
+function getNextAvailableItemID() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  if (!itemSheet) {
+    // 如果工作表不存在，從 1 開始
+    return "I001";
+  }
+
+  const idColIndex = 0; // ItemID 是第一欄
+  const ids = itemSheet.getRange(2, idColIndex + 1, itemSheet.getLastRow()).getValues()
+    .map(row => row[0])
+    .filter(id => typeof id === 'string' && id.startsWith('I'));
+
+  let maxNum = 0;
+  ids.forEach(id => {
+    const num = parseInt(id.substring(1), 10);
+    if (!isNaN(num) && num > maxNum) {
+      maxNum = num;
+    }
+  });
+
+  return "I" + String(maxNum + 1).padStart(3, '0');
+}
