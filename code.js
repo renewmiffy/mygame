@@ -428,12 +428,12 @@ function getMissionList() {
         currentProgress = 0; // 找不到技能，進度為 0
       }
       fulfilled = currentProgress >= targetValue;
-    } else if (conditionType === "StreakCount") { // ✅ 變更：直接使用欄位名稱，更直觀
+    } else if (conditionType === "StreakCount" || conditionType === "SkillStreak") {
       const [skillId, count] = param.split(":");
       targetValue = parseInt(count);
       const skillInfo = skillMap[skillId];
       if (skillInfo) {
-        currentProgress = skillInfo.streak;
+        currentProgress = skillInfo.streak; // ✅【核心修正】從這裡讀取目前進度
       } else {
         currentProgress = 0;
       }
@@ -454,7 +454,8 @@ function getMissionList() {
       'TaskDoneToday': '完成指定日常',
       'TaskDoneCount': '指定日常總次數',
       'TotalDoneCount': '指定學習總次數',
-      'StreakCount': '指定學習連續天數'
+      'StreakCount': '指定學習連續天數',
+      'SkillStreak': '指定學習連續天數'
     };
     const conditionDisplayName = conditionTypeMap[conditionType] || conditionType;
 
@@ -695,7 +696,10 @@ function doLearning(skillId) {
     const rewardResult = applyRewards(profile, effects, "學習 - " + skillName);
 
     const lastDateStr = (lastDate instanceof Date) ? formatYMD(lastDate) : "";
-    const yesterdayStr = formatYMD(new Date(new Date().getTime() - 86400000));
+    // ✅【核心修正】更穩健地計算「昨天」的日期，避免時區問題
+    const now = new Date();
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const yesterdayStr = formatYMD(yesterday);
 
     skillRowToUpdate[lastDoneDateCol] = new Date();
     skillRowToUpdate[streakCol] = (lastDateStr === yesterdayStr) ? (parseInt(skillRowToUpdate[streakCol] || 0)) + 1 : 1;

@@ -792,15 +792,21 @@
         // ✅ 新增：任務條件編輯區塊 (僅限 MissionCenter)
         let conditionEditorHtml = '';
         if (taskType === 'mission') {
-          const conditionTypes = ['DailyTaskDoneCount', 'SkillsLearnedTodayCount', 'TaskDoneToday', 'TaskDoneCount', 'TotalDoneCount', 'StreakCount'];
-          // ✅【核心修改】建立中文對照表
+          // ✅【核心修正】定義要在 UI 上顯示的條件類型，移除重複的 SkillStreak
+          const displayConditionTypes = ['DailyTaskDoneCount', 'SkillsLearnedTodayCount', 'TaskDoneToday', 'TaskDoneCount', 'TotalDoneCount', 'StreakCount'];
+          
+          // 建立中文名稱對照表
           const conditionTypeMap = {
             'DailyTaskDoneCount': '每日任務完成數', 'SkillsLearnedTodayCount': '今日學習技能數',
             'TaskDoneToday': '完成指定日常', 'TaskDoneCount': '指定日常總次數',
             'TotalDoneCount': '指定學習總次數', 'StreakCount': '指定學習連續天數'
           };
-          // 使用對照表產生選項
-          const optionsHtml = conditionTypes.map(ct => `<option value="${ct}" ${task.conditionType === ct ? 'selected' : ''}>${conditionTypeMap[ct] || ct}</option>`).join('');
+
+          // ✅【核心修正】為了相容舊資料，將 'SkillStreak' 視為 'StreakCount' 來選中正確選項
+          const selectedConditionType = (task.conditionType === 'SkillStreak') ? 'StreakCount' : task.conditionType;
+
+          // 產生下拉選單的 HTML
+          const optionsHtml = displayConditionTypes.map(ct => `<option value="${ct}" ${selectedConditionType === ct ? 'selected' : ''}>${conditionTypeMap[ct] || ct}</option>`).join('');
           const paramEditorHtml = generateConditionParamHtml(task.conditionType, task.conditionParam);
           conditionEditorHtml = `
             <div class="editable-field">
@@ -920,13 +926,15 @@
           const paramEditor = document.getElementById(`condition-param-editor-${taskId}`);
           const paramIdSelect = paramEditor.querySelector('select[data-editor="param-id"]');
           const paramValueInput = paramEditor.querySelector('input[data-editor="param-value"]');
-
+ 
           if (paramIdSelect && paramValueInput) { // 格式為 "ID:Value"
             updatedData['條件參數'] = `${paramIdSelect.value}:${paramValueInput.value}`;
           } else if (paramValueInput) { // 格式只有 "Value"
             updatedData['條件參數'] = paramValueInput.value;
-          } else if (paramIdSelect) { // 格式只有 "ID"
+          } else if (paramIdSelect) { // 格式只有 "ID" (例如 TaskDoneToday)
             updatedData['條件參數'] = paramIdSelect.value;
+          } else {
+            updatedData['條件參數'] = ''; // 如果沒有任何輸入，確保傳送空字串
           }
         }
 
@@ -995,14 +1003,13 @@
         let paramId = '';
         let paramValue = '';
         const paramStr = String(conditionParam || '');
-        const parts = paramStr.split(':');
-        paramId = parts[0];
-        paramValue = parts.length > 1 ? parts[1] : '';
 
         let html = '';
 
         switch (conditionType) {
           case 'TaskDoneToday':
+            // ✅【核心修正】對於只有 ID 的條件，直接使用 paramStr
+            paramId = paramStr;
             const taskOptions = (window.ALL_DAILY_TASKS || []).map(t => `<option value="${t.id}" ${paramId === t.id ? 'selected' : ''}>${t.name}</option>`).join('');
             html = `
               <div class="editable-field">
@@ -1014,8 +1021,15 @@
           case 'TaskDoneCount':
           case 'TotalDoneCount':
           case 'StreakCount':
-            const isSkill = conditionType.includes('DoneCount') || conditionType.includes('Streak');
-            const sourceList = isSkill ? (window.ALL_SKILLS || []) : (window.ALL_DAILY_TASKS || []);
+          case 'SkillStreak': // ✅【核心修正】相容舊的 SkillStreak 條件類型
+            // ✅【核心修正】對於 "ID:Value" 格式的條件，正確解析
+            const parts = paramStr.split(':');
+            paramId = parts[0];
+            paramValue = parts.length > 1 ? parts[1] : '';
+
+            // ✅【核心修正】更精準地判斷條件類型是針對「技能」還是「日常任務」
+            const isSkill = (conditionType === 'TotalDoneCount' || conditionType === 'StreakCount' || conditionType === 'SkillStreak');
+            const sourceList = isSkill ? (window.ALL_SKILLS || []) : (window.ALL_DAILY_TASKS || []); // TaskDoneCount 會落入此處
             const idField = isSkill ? 'SkillID' : 'id';
             const nameField = isSkill ? 'SkillName' : 'name';
             const options = sourceList.map(item => `<option value="${item[idField]}" ${paramId === item[idField] ? 'selected' : ''}>${item[nameField]}</option>`).join('');
