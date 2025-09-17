@@ -2566,7 +2566,7 @@ function _performSinglePull(lootTable, allItemData, allItemHeaders, ownedAppeara
     }
     if (wonLoot === null) wonLoot = lootTable[lootTable.length - 1];
 
-    const type = wonLoot.Type || "ItemRarity";
+    const type = wonLoot.Type || "ItemRarity"; // 為了相容舊資料，預設為 ItemRarity
 
     if (type === "Currency") {
       return { type: 'currency', rewardID: wonLoot.RewardID, quantity: wonLoot.Quantity, displayName: wonLoot.DisplayName, rarity: 'currency' };
@@ -2593,7 +2593,26 @@ function _performSinglePull(lootTable, allItemData, allItemHeaders, ownedAppeara
         // ✅ 抽到新的
         return { type: 'appearance', filename: filename, itemName: name, shortType: shortType, rarity: 'new-appearance' };
       }
-    } else { // type === "ItemRarity"
+    } else if (type === "SpecificItem") {
+      // ✅ 新增：處理指定道具的邏輯
+      const itemID = wonLoot.ItemID;
+      if (!itemID) {
+        Logger.log(`[抽獎錯誤] SpecificItem 類型的獎勵缺少 ItemID。獎池項目: ${JSON.stringify(wonLoot)}`);
+        return { type: 'currency', rewardID: 'Coins', quantity: 100, itemName: '金幣 (補償)', rarity: 'currency' };
+      }
+
+      // 從道具主資料中找到該道具
+      const itemRow = allItemData.slice(1).find(row => row[allItemHeaders.indexOf("ItemID")] === itemID);
+      if (!itemRow) {
+        Logger.log(`[抽獎錯誤] 在 ItemMaster 中找不到指定的 ItemID: ${itemID}。獎池項目: ${JSON.stringify(wonLoot)}`);
+        return { type: 'currency', rewardID: 'Coins', quantity: 100, itemName: '金幣 (補償)', rarity: 'currency' };
+      }
+
+      const itemName = itemRow[allItemHeaders.indexOf("ItemName")] || itemID;
+      const itemRarity = itemRow[allItemHeaders.indexOf("Rarity")] || 0;
+
+      return { type: 'item', itemID: itemID, itemName: itemName, rarity: itemRarity };
+    } else if (type === "ItemRarity") { // ✅ 修正：從 else 改為 else if，明確指定處理 ItemRarity
       const selectedRarity = wonLoot.Rarity;
       const rarityCol = allItemHeaders.indexOf("Rarity");
       const potentialItems = allItemData.slice(1).filter(row => String(row[rarityCol]) === String(selectedRarity));
@@ -2602,6 +2621,9 @@ function _performSinglePull(lootTable, allItemData, allItemHeaders, ownedAppeara
       const wonItemID = wonItemRow[allItemHeaders.indexOf("ItemID")];
       const wonItemName = wonItemRow[allItemHeaders.indexOf("ItemName")] || wonItemID;
       return { type: 'item', itemID: wonItemID, itemName: wonItemName, rarity: selectedRarity };
+    } else {
+      Logger.log(`[抽獎錯誤] 未知的獎池類型: "${type}"。獎池項目: ${JSON.stringify(wonLoot)}`);
+      return { type: 'currency', rewardID: 'Coins', quantity: 100, itemName: '金幣 (補償)', rarity: 'currency' };
     }
 }
 
@@ -3279,4 +3301,81 @@ function getNextAvailableItemID() {
   });
 
   return "I" + String(maxNum + 1).padStart(3, '0');
+}
+
+/**
+ * [新函式][管理後台用] 根據 ItemID 取得單一道具的完整資料。
+ * @param {string} itemID - 要查詢的道具 ID。
+ * @returns {object} 包含該道具所有欄位資料的物件。
+ */
+function getItemMasterDetails(itemID) {
+  if (!itemID) {
+    throw new Error("❌ 未提供 ItemID。");
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  if (!itemSheet) {
+    throw new Error("❌ 找不到 ItemMaster 工作表。");
+  }
+
+  const data = itemSheet.getDataRange().getValues();
+  const headers = data[0];
+  const idColIndex = headers.indexOf("ItemID");
+
+  const rowData = data.find(row => row[idColIndex] === itemID);
+
+  if (!rowData) {
+    throw new Error(`❌ 在 ItemMaster 中找不到 ItemID 為 "${itemID}" 的道具。`);
+  }
+
+  const itemDetails = {};
+  headers.forEach((header, index) => {
+    itemDetails[header] = rowData[index];
+  });
+
+  return itemDetails;
+}
+
+/**
+ * [新函式][管理後台用] 更新 ItemMaster 中的現有道具。
+ * @param {object} itemData - 包含要更新道具所有欄位資料的物件。
+ * @returns {string} 執行結果訊息。
+ */
+function updateItemMaster(itemData) {
+  // 1. 基本驗證
+  const itemID = itemData.ItemID;
+  if (!itemID || String(itemID).trim() === '') {
+    throw new Error("❌ 道具 ID (ItemID) 為必填項目，不可變更。");
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const itemSheet = ss.getSheetByName("ItemMaster");
+  if (!itemSheet) {
+    throw new Error("❌ 找不到 ItemMaster 工作表。");
+  }
+
+  const data = itemSheet.getDataRange().getValues();
+  const headers = data[0];
+  const idColIndex = headers.indexOf("ItemID");
+
+  // 2. 找到要更新的列
+  const rowIndex = data.findIndex(row => row[idColIndex] === itemID);
+  if (rowIndex === -1) {
+    // rowIndex 是 0-based，所以找不到時是 -1
+    throw new Error(`❌ 在 ItemMaster 中找不到 ID 為 "${itemID}" 的道具可供更新。`);
+  }
+
+  // 3. 根據標頭順序建立要寫入的新資料列
+  // ✅ 確保所有欄位都存在，若 itemData 中沒有，則填入空字串
+  const newRow = headers.map(header => {
+      // 對於布林值，如果前端傳來的是 'true'/'false' 字串，也需要處理
+      if (typeof itemData[header] === 'boolean') return itemData[header];
+      return itemData[header] ?? '';
+  });
+
+  // 4. 寫入該列
+  itemSheet.getRange(rowIndex + 1, 1, 1, headers.length).setValues([newRow]);
+
+  return `✅ 已成功更新道具 [${itemData.ItemName || itemID}] 的資料。`;
 }

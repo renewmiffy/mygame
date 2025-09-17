@@ -27,6 +27,8 @@
       .btn-create-task { font-size: 0.8em; vertical-align: middle; margin-left: 10px; padding: 5px 10px; cursor: pointer; } /* ✅ 新增：新增按鈕樣式 */
       .btn-save-task { background-color: #28a745; color: white; }
       .btn-delete-task { background-color: #dc3545; color: white; margin-left: auto; } /* ✅ 新增：刪除按鈕樣式 */
+      /* ✅ 新增：獎池編輯器專用樣式，避免與任務編輯器衝突 */
+      .loottable-editor-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
     </style>
     <style>
       body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px; background-color: #f4f4f9; color: #333; font-size: 18px; }
@@ -189,13 +191,25 @@
 
       <!-- 5. 道具管理面板 -->
       <div id="panel-items" class="tab-panel">
+        <!-- ✅ 新增：編輯道具區塊 -->
+        <div class="container" style="margin-bottom: 20px;">
+          <h1>📝 編輯現有道具</h1>
+          <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+              <label for="edit-item-selector" style="flex-shrink: 0; margin-bottom: 0;">選擇道具</label>
+              <select id="edit-item-selector" style="flex-grow: 1; padding: 15px; font-size: 1.1em;">
+                  <option value="">-- 載入道具列表中... --</option>
+              </select>
+              <button type="button" onclick="loadItemForEditing()" style="padding: 15px; font-size: 1.1em; cursor: pointer;">🔍 載入編輯</button>
+          </div>
+        </div>
         <div class="container">
-          <h1>📦 新增道具到 ItemMaster</h1>
+          <h1 id="item-form-title">� 新增道具到 ItemMaster</h1>
           <form id="create-item-form">
+            <input type="hidden" id="edit-mode-item-id" value=""> <!-- ✅ 新增：用於追蹤編輯模式 -->
             <fieldset style="border: 1px solid #007bff; padding: 15px; border-radius: 5px;">
               <legend style="color: #007bff; font-weight: bold;">基本資訊</legend>
               <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
-                <label for="item-id">道具 ID (ItemID) - 英文/數字，不可重複</label>
+                <label for="item-id">道具 ID (ItemID) - 編輯模式下不可修改</label>
                 <input type="text" id="item-id" required readonly style="flex-grow: 1; background-color: #e9ecef;">
                 <button type="button" onclick="fetchNextItemId()" style="padding: 15px; font-size: 1.1em; cursor: pointer;">🔄</button>
               </div>
@@ -248,11 +262,25 @@
             <fieldset id="chest-fields" style="display:none; margin-top: 20px; padding: 15px; border-radius: 5px; border-color: #ffc107;">
               <legend style="color: #856404; font-weight: bold;">寶箱專用設定</legend>
               <div class="form-group">
-                <label for="item-loottable">獎池 (LootTableJSON)</label>
-                <textarea id="item-loottable" rows="5" placeholder='[{"Type":"ItemRarity", "Rarity":1, "Weight":70}, {"Type":"Currency", "RewardID":"Coins", "Quantity":100, "Weight":30}]'></textarea>
+                <label>獎池設定 (LootTable)</label>
+                <!-- ✅ 新的視覺化獎池編輯器 -->
+                <div id="loottable-editor" style="border: 1px solid #ddd; padding: 10px; border-radius: 4px;">
+                    <div id="loottable-rows-container">
+                        <!-- 獎池項目會由 JS 動態加入這裡 -->
+                    </div>
+                    <button type="button" class="btn-add-reward" onclick="addLootTableRow()" style="margin-top: 10px;">＋ 新增獎池項目</button>
+                </div>
               </div>
-              <div class="form-group"><label for="item-pity-rarity">保底稀有度 (PityRarity)</label><input type="number" id="item-pity-rarity" min="1" value="3"></div>
-              <div class="form-group"><label for="item-pity-counter">保底抽數 (PityCounter)</label><input type="number" id="item-pity-counter" min="1" value="10"></div>
+              <div class="form-group">
+                <label for="item-pity-rarity">保底稀有度 (PityRarity)</label>
+                <input type="number" id="item-pity-rarity" min="0" value="0">
+                <small style="color: #6c757d; display: block; margin-top: 5px;">(設為 0 表示不啟用「稀有度」保底。)</small>
+              </div>
+              <div class="form-group">
+                <label for="item-pity-counter">保底抽數 (PityCounter)</label>
+                <input type="number" id="item-pity-counter" min="0" value="0">
+                <small style="color: #6c757d; display: block; margin-top: 5px;">(設為 0 表示完全不啟用保底機制。)</small>
+              </div>
             </fieldset>
 
             <fieldset style="margin-top: 20px; padding: 15px; border-radius: 5px;">
@@ -489,6 +517,7 @@
             const mailSelector = document.getElementById('item-selector');
             const achSelector = document.getElementById('ach-item-selector');
             // ✅ 新增：將獎勵選項存到全域變數，供任務編輯器使用
+            const editSelector = document.getElementById('edit-item-selector');
             window.REWARD_OPTIONS = options;
 
             mailSelector.innerHTML = '<option value="">-- 請選擇道具 --</option>';
@@ -499,6 +528,7 @@
               const optionHtml = `<option value="${item.id}">${rarityText}${item.name}</option>`;
               mailSelector.innerHTML += optionHtml;
               achSelector.innerHTML += optionHtml;
+              editSelector.innerHTML += optionHtml; // ✅ 新增：填充編輯道具的下拉選單
             });
 
             // ✅ 新增：更新成就區塊的標題紅點
@@ -1221,6 +1251,7 @@
       // 從視覺化編輯器收集資料並產生 Effect JSON 字串
       function buildEffectJson() {
         const itemType = document.getElementById('item-type').value;
+        if (itemType === 'Redeemable') return ''; // 兌換券沒有效果 JSON
         const effectObject = {};
 
         if (itemType === 'Consumable' || itemType === 'CurrencyPouch') {
@@ -1249,6 +1280,61 @@
         return Object.keys(effectObject).length > 0 ? JSON.stringify(effectObject, null, 2) : '';
       }
 
+      // ✅ 新增：從視覺化編輯器收集資料並產生 LootTable JSON 字串
+      function buildLootTableJson() {
+        const rows = document.querySelectorAll('#loottable-rows-container .loottable-editor-row');
+        const lootTable = [];
+        rows.forEach(row => {
+            const type = row.querySelector('.loottable-type-select')?.value;
+            const weight = parseInt(row.querySelector('.loottable-weight-input')?.value);
+            if (!type || isNaN(weight) || weight <= 0) return;
+
+            const entry = { Type: type, Weight: weight };
+            let isValid = false;
+
+            switch (type) {
+                case 'ItemRarity':
+                    const rarity = parseInt(row.querySelector('.loottable-param-rarity')?.value);
+                    if (!isNaN(rarity) && rarity >= 0) {
+                        entry.Rarity = rarity;
+                        isValid = true;
+                    }
+                    break;
+                case 'SpecificItem':
+                    const itemId = row.querySelector('.loottable-param-itemid')?.value;
+                    if (itemId) {
+                        entry.ItemID = itemId;
+                        isValid = true;
+                    }
+                    break;
+                case 'Currency':
+                    const rewardId = row.querySelector('.loottable-param-rewardid')?.value;
+                    const quantity = parseInt(row.querySelector('.loottable-param-quantity')?.value);
+                    if (rewardId && !isNaN(quantity)) {
+                        entry.RewardID = rewardId;
+                        entry.Quantity = quantity;
+                        isValid = true;
+                    }
+                    break;
+                case 'Appearance':
+                    const appearanceType = row.querySelector('.loottable-param-appearancetype')?.value;
+                    if (appearanceType) {
+                        entry.AppearanceType = appearanceType;
+                        isValid = true;
+                    }
+                    break;
+            }
+            
+            if (isValid) {
+                 lootTable.push(entry);
+            } else {
+              console.warn('Skipping invalid loot table entry:', row);
+            }
+        });
+
+        return lootTable.length > 0 ? JSON.stringify(lootTable, null, 2) : '';
+      }
+
       document.getElementById('create-item-form').addEventListener('submit', function(e) {
         e.preventDefault();
         const msgDiv = document.getElementById('create-item-message');
@@ -1256,6 +1342,7 @@
 
         // 收集表單資料
         const effectJson = buildEffectJson(); // 從新的視覺化編輯器建立 JSON
+        const lootTableJson = buildLootTableJson(); // ✅ 從新的獎池編輯器建立 JSON
 
         const itemData = {
           ItemID: document.getElementById('item-id').value.trim(),
@@ -1271,7 +1358,7 @@
           HonorBuyPrice: document.getElementById('item-honor-buy-price').value,
           HonorSellPrice: document.getElementById('item-honor-sell-price').value,
           IsPurchasable: document.getElementById('item-purchasable').checked,
-          LootTableJSON: document.getElementById('item-loottable').value,
+          LootTableJSON: lootTableJson, // ✅ 使用新產生的 JSON
           PityRarity: document.getElementById('item-pity-rarity').value,
           PityCounter: document.getElementById('item-pity-counter').value,
         };
@@ -1280,14 +1367,27 @@
         submitBtn.textContent = '新增中...';
         msgDiv.style.display = 'none';
 
-        google.script.run
-          .withSuccessHandler(function(response) {
+        // ✅ 新增：判斷是新增還是更新
+        const editModeItemId = document.getElementById('edit-mode-item-id').value;
+        const isEditMode = editModeItemId !== '';
+
+        const apiCall = isEditMode 
+            ? google.script.run.withSuccessHandler(onUpdateSuccess).withFailureHandler(onFormFailure).updateItemMaster(itemData)
+            : google.script.run.withSuccessHandler(onCreateSuccess).withFailureHandler(onFormFailure).createItemMaster(itemData);
+      });
+
+      // ✅ 新增：表單提交的成功/失敗處理函式
+      function onCreateSuccess(response) {
+          const msgDiv = document.getElementById('create-item-message');
+          const submitBtn = document.querySelector('#create-item-form button[type="submit"]');
+
             msgDiv.textContent = response;
             msgDiv.style.backgroundColor = '#d4edda';
             msgDiv.style.color = '#155724';
             msgDiv.style.display = 'block';
             document.getElementById('create-item-form').reset(); // 清空表單
             // 清空所有效果編輯器
+            document.getElementById('loottable-rows-container').innerHTML = '';
             document.querySelectorAll('.reward-editor-rows-container').forEach(c => c.innerHTML = '');
             // 重設欄位可見度
             toggleItemTypeFields();
@@ -1296,17 +1396,223 @@
 
             submitBtn.disabled = false;
             submitBtn.textContent = '✨ 新增道具到 ItemMaster';
-          })
-          .withFailureHandler(function(error) {
+      }
+
+      function onUpdateSuccess(response) {
+          const msgDiv = document.getElementById('create-item-message');
+          const submitBtn = document.querySelector('#create-item-form button[type="submit"]');
+          msgDiv.textContent = response;
+          msgDiv.style.backgroundColor = '#d4edda';
+          msgDiv.style.color = '#155724';
+          msgDiv.style.display = 'block';
+          submitBtn.disabled = false;
+          submitBtn.textContent = '💾 儲存變更';
+          // 可以在此處刷新道具列表，但目前不影響操作，暫不實作
+      }
+
+      function onFormFailure(error) {
+          const msgDiv = document.getElementById('create-item-message');
+          const submitBtn = document.querySelector('#create-item-form button[type="submit"]');
+          const isEditMode = document.getElementById('edit-mode-item-id').value !== '';
             msgDiv.textContent = "錯誤：" + error.message;
             msgDiv.style.backgroundColor = '#f8d7da';
             msgDiv.style.color = '#721c24';
             msgDiv.style.display = 'block';
             submitBtn.disabled = false;
-            submitBtn.textContent = '✨ 新增道具到 ItemMaster';
-          })
-          .createItemMaster(itemData);
-      });
+            submitBtn.textContent = isEditMode ? '💾 儲存變更' : '✨ 新增道具到 ItemMaster';
+      }
+
+      // ✅ 新增：載入道具資料以供編輯
+      function loadItemForEditing() {
+        const itemId = document.getElementById('edit-item-selector').value;
+        if (!itemId) {
+          alert('請先選擇一個道具！');
+          return;
+        }
+        showToast('正在載入道具資料...');
+        google.script.run
+          .withSuccessHandler(populateItemForm)
+          .withFailureHandler(err => alert('載入失敗：' + err.message))
+          .getItemMasterDetails(itemId);
+      }
+
+      // ✅ 新增：將載入的道具資料填入表單
+      function populateItemForm(item) {
+        // 0. 重設表單並進入編輯模式
+        document.getElementById('create-item-form').reset();
+        document.getElementById('loottable-rows-container').innerHTML = '';
+        document.querySelectorAll('.reward-editor-rows-container').forEach(c => c.innerHTML = '');
+        document.getElementById('edit-mode-item-id').value = item.ItemID;
+        document.getElementById('item-form-title').textContent = `📝 編輯道具：${item.ItemName}`;
+        document.querySelector('#create-item-form button[type="submit"]').textContent = '💾 儲存變更';
+        document.getElementById('create-item-message').style.display = 'none';
+
+        // 1. 填入基本資料
+        document.getElementById('item-id').value = item.ItemID;
+        document.getElementById('item-name').value = item.ItemName;
+        document.getElementById('item-type').value = item.ItemType;
+        document.getElementById('item-rarity').value = item.Rarity || 0;
+        document.getElementById('item-description').value = item.Description;
+
+        // 2. 填入交易屬性
+        document.getElementById('item-buy-price').value = item.BuyPrice;
+        document.getElementById('item-sell-price').value = item.SellPrice;
+        document.getElementById('item-honor-buy-price').value = item.HonorBuyPrice;
+        document.getElementById('item-honor-sell-price').value = item.HonorSellPrice;
+        document.getElementById('item-purchasable').checked = item.IsPurchasable === true;
+        document.getElementById('item-sellable').checked = item.IsSellable === true;
+        document.getElementById('item-stackable').checked = item.IsStackable === true;
+
+        // 3. 觸發 UI 更新
+        toggleItemTypeFields();
+
+        // 4. 解析並還原 Effect
+        if (item.Effect) {
+          try {
+            const effects = JSON.parse(item.Effect);
+            const itemType = item.ItemType;
+            let panelType, effectType;
+
+            if (itemType === 'Consumable' || itemType === 'CurrencyPouch') {
+              panelType = 'consumable'; effectType = 'attribute';
+              const container = document.querySelector(`#effect-editor-${panelType} .reward-editor-rows-container`);
+              Object.entries(effects).forEach(([key, value]) => {
+                container.insertAdjacentHTML('beforeend', createEffectRowHtml(effectType, key, value));
+              });
+            } else if (itemType === 'FixedBundle') {
+              panelType = 'bundle'; effectType = 'item';
+              const container = document.querySelector(`#effect-editor-${panelType} .reward-editor-rows-container`);
+              (effects.Items || []).forEach(it => {
+                container.insertAdjacentHTML('beforeend', createEffectRowHtml(effectType, it.ItemID, it.Quantity));
+              });
+            } else if (itemType === 'BuffItem') {
+              panelType = 'buff'; effectType = 'buff';
+              document.getElementById('buff-duration').value = effects.duration_hours || 1;
+              const container = document.querySelector(`#effect-editor-${panelType} .reward-editor-rows-container`);
+              Object.entries(effects.effects || {}).forEach(([key, value]) => {
+                container.insertAdjacentHTML('beforeend', createEffectRowHtml(effectType, key, value));
+              });
+            }
+          } catch (e) { console.error('解析 Effect JSON 失敗:', e); }
+        }
+
+        // 5. 解析並還原 LootTable (寶箱專用)
+        if (item.ItemType === 'TreasureChest') {
+          document.getElementById('item-pity-rarity').value = item.PityRarity || 0;
+          document.getElementById('item-pity-counter').value = item.PityCounter || 0;
+          if (item.LootTableJSON) {
+            try {
+              const lootTable = JSON.parse(item.LootTableJSON);
+              let lootTableHtml = '';
+              lootTable.forEach(entry => {
+                // ✅【相容性修正】為了讀取舊的、沒有 "Type" 欄位的獎池資料。
+                // 如果沒有 Type 但有 Rarity，則預設為 ItemRarity。
+                if (!entry.Type && entry.hasOwnProperty('Rarity')) {
+                  entry.Type = 'ItemRarity';
+                }
+
+                // ✅【核心修正】直接產生帶有正確值的 HTML，不再依賴 querySelector
+                let paramsHtml = '';
+                switch (entry.Type) {
+                  case 'ItemRarity':
+                    paramsHtml = `<input type="number" class="loottable-param-rarity" min="0" max="5" value="${entry.Rarity}" placeholder="稀有度" style="width: 80px;">`;
+                    break;
+                  case 'SpecificItem':
+                    const itemOptions = (window.REWARD_OPTIONS.items || []).map(opt => `<option value="${opt.id}" ${opt.id === entry.ItemID ? 'selected' : ''}>${opt.name}</option>`).join('');
+                    paramsHtml = `<select class="loottable-param-itemid" style="flex-grow: 1;"><option value="">-- 選擇道具 --</option>${itemOptions}</select>`;
+                    break;
+                  case 'Currency':
+                    paramsHtml = `
+                      <select class="loottable-param-rewardid" style="flex-basis: 120px;">
+                        <option value="Coins" ${entry.RewardID === 'Coins' ? 'selected' : ''}>金幣</option>
+                        <option value="HonorPoints" ${entry.RewardID === 'HonorPoints' ? 'selected' : ''}>榮譽點數</option>
+                      </select>
+                      <input type="number" class="loottable-param-quantity" min="1" value="${entry.Quantity}" placeholder="數量" style="width: 80px;">
+                    `;
+                    break;
+                  case 'Appearance':
+                    paramsHtml = `
+                      <select class="loottable-param-appearancetype" style="flex-basis: 120px;">
+                        <option value="Character" ${entry.AppearanceType === 'Character' ? 'selected' : ''}>角色造型</option>
+                        <option value="Background" ${entry.AppearanceType === 'Background' ? 'selected' : ''}>背景</option>
+                      </select>
+                    `;
+                    break;
+                }
+
+                const typeOptions = ['ItemRarity', 'SpecificItem', 'Currency', 'Appearance'];
+                const typeNames = {'ItemRarity': '道具 (依稀有度)', 'SpecificItem': '道具 (指定)', 'Currency': '貨幣', 'Appearance': '外觀'};
+                const typeSelectHtml = typeOptions.map(t => `<option value="${t}" ${t === entry.Type ? 'selected' : ''}>${typeNames[t] || t}</option>`).join('');
+
+                lootTableHtml += `
+                  <div class="loottable-editor-row" style="background: #f9f9f9; padding: 8px; border-radius: 4px;"><select class="loottable-type-select" onchange="updateLootTableRow(this)" style="flex-basis: 180px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"><option value="">-- 選擇類型 --</option>${typeSelectHtml}</select><div class="loottable-params-container" style="display: flex; flex-grow: 1; gap: 10px; align-items: center;">${paramsHtml}</div><input type="number" class="loottable-weight-input" min="1" value="${entry.Weight || 10}" placeholder="權重" style="width: 70px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"><button type="button" class="remove-item-btn" onclick="this.parentElement.remove()">－</button></div>`;
+              });
+              document.getElementById('loottable-rows-container').innerHTML = lootTableHtml;
+            } catch (e) { console.error('解析 LootTable JSON 失敗:', e); }
+          }
+        }
+
+        showToast(`✅ 已載入 [${item.ItemName}] 的資料。`);
+        // 捲動到表單頂部方便編輯
+        document.getElementById('item-form-title').scrollIntoView({ behavior: 'smooth' });
+      }
+
+      // ✅ 新增：新增一行獎池項目
+      function addLootTableRow() {
+        const container = document.getElementById('loottable-rows-container');
+        const rowHtml = `
+          <div class="loottable-editor-row" style="background: #f9f9f9; padding: 8px; border-radius: 4px;">
+            <select class="loottable-type-select" onchange="updateLootTableRow(this)" style="flex-basis: 180px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+              <option value="">-- 選擇類型 --</option>
+              <option value="ItemRarity">道具 (依稀有度)</option>
+              <option value="SpecificItem">道具 (指定)</option>
+              <option value="Currency">貨幣</option>
+              <option value="Appearance">外觀</option>
+            </select>
+            <div class="loottable-params-container" style="display: flex; flex-grow: 1; gap: 10px; align-items: center;">
+              <!-- 動態欄位 -->
+            </div>
+            <input type="number" class="loottable-weight-input" min="1" value="10" placeholder="權重" style="width: 70px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            <button type="button" class="remove-item-btn" onclick="this.parentElement.remove()">－</button>
+          </div>
+        `;
+        container.insertAdjacentHTML('beforeend', rowHtml);
+      }
+
+      // ✅ 新增：根據選擇的類型更新該行的參數欄位
+      function updateLootTableRow(selectElement) {
+        const type = selectElement.value;
+        const paramsContainer = selectElement.parentElement.querySelector('.loottable-params-container');
+        let paramsHtml = '';
+
+        switch (type) {
+          case 'ItemRarity':
+            paramsHtml = `<input type="number" class="loottable-param-rarity" min="0" max="5" value="1" placeholder="稀有度" style="width: 80px;">`;
+            break;
+          case 'SpecificItem':
+            const itemOptions = (window.REWARD_OPTIONS.items || []).map(opt => `<option value="${opt.id}">${opt.name}</option>`).join('');
+            paramsHtml = `<select class="loottable-param-itemid" style="flex-grow: 1;"><option value="">-- 選擇道具 --</option>${itemOptions}</select>`;
+            break;
+          case 'Currency':
+            paramsHtml = `
+              <select class="loottable-param-rewardid" style="flex-basis: 120px;">
+                <option value="Coins">金幣</option>
+                <option value="HonorPoints">榮譽點數</option>
+              </select>
+              <input type="number" class="loottable-param-quantity" min="1" value="100" placeholder="數量" style="width: 80px;">
+            `;
+            break;
+          case 'Appearance':
+            paramsHtml = `
+              <select class="loottable-param-appearancetype" style="flex-basis: 120px;">
+                <option value="Character">角色造型</option>
+                <option value="Background">背景</option>
+              </select>
+            `;
+            break;
+        }
+        paramsContainer.innerHTML = paramsHtml;
+      }
     </script>
     <!-- ✅ 新增：新增任務 Modal 及相關 JS -->
     <div id="create-task-modal" class="modal-overlay">
