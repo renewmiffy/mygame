@@ -385,7 +385,9 @@ function getMissionList() {
     const conditionType = getMissionField(row, "條件類型");
     const param = getMissionField(row, "條件參數");
     const type = getMissionField(row, "類型") || "Daily";
-    const repeatable = getMissionField(row, "可重複") === "是";
+    // ✅【修正】同時相容舊的中文 "是" 和新的布林值 true，讓判斷更穩健。
+    const repeatableValue = getMissionField(row, "可重複");
+    const repeatable = repeatableValue === '是' || repeatableValue === true;
     const displayOrder = parseInt(getMissionField(row, "顯示順序") || 0);
     const lastClaimed = getMissionField(row, "LastClaimedDate");
 
@@ -438,6 +440,37 @@ function getMissionList() {
         currentProgress = 0;
       }
       fulfilled = currentProgress >= targetValue;
+    } else if (conditionType === "SustainedStreak") {
+      // ✅【核心修正】增加對條件參數格式的防禦性檢查，避免因格式錯誤 (例如缺少技能ID) 導致整個任務中心崩潰。
+      if (typeof param !== 'string' || !param.includes(':')) {
+        Logger.log(`⚠️ 任務 [${name}] 的 SustainedStreak 條件參數格式錯誤，應為 "技能ID:基礎天數"，但收到了 "${param}"。將跳過此任務。`);
+        fulfilled = false; // 將此任務標記為未完成
+      } else {
+        const [skillId, baseStreak] = param.split(":");
+        const baseStreakNum = parseInt(baseStreak);
+        const skillInfo = skillMap[skillId];
+        currentProgress = skillInfo ? skillInfo.streak : 0;
+
+        // 取得上次領取時的連續天數 (如果沒有，就用基礎天數)
+        // ✅【錯誤修正】更穩健地讀取 "LastClaimedValue" 欄位，避免在欄位不存在時崩潰。
+        const lastClaimedValueColIndex = missionHeaders.indexOf("LastClaimedValue");
+        const lastClaimedValue = lastClaimedValueColIndex !== -1 ? row[lastClaimedValueColIndex] : null;
+        const lastClaimedStreak = parseInt(lastClaimedValue || baseStreakNum);
+        
+        // 計算下一個目標天數 (上次領取的天數 + 7)
+        targetValue = lastClaimedStreak + 7;
+
+        // 判斷是否達成：目前連續天數 >= 下一個目標天數
+        fulfilled = currentProgress >= targetValue;
+
+        // 如果已達成，進度條顯示滿的；如果未達成，進度條顯示從上次領取開始的進度。
+        if (fulfilled) {
+          currentProgress = targetValue; // 讓進度條顯示為 100%
+        } else {
+          // 如果還沒達成，為了讓進度條好看，我們把目標設為下一個7天，進度設為當前天數
+          // 這樣進度條就會顯示 (例如) 33 / 37
+        }
+      }
     }
 
     let claimed = false;
@@ -454,7 +487,8 @@ function getMissionList() {
       'TaskDoneToday': '完成指定日常',
       'TaskDoneCount': '指定日常總次數',
       'TotalDoneCount': '指定學習總次數',
-      'StreakCount': '指定學習連續天數',
+      'StreakCount': '指定學習連續天數', // ✅ 新增
+      'SustainedStreak': '持續連續天數獎勵',
       'SkillStreak': '指定學習連續天數'
     };
     const conditionDisplayName = conditionTypeMap[conditionType] || conditionType;
@@ -494,6 +528,7 @@ function getMissionList() {
       rewardText: rewardText,
       fulfilled: fulfilled,
       claimed: claimed,
+      repeatable: repeatable, // ✅ 新增：回傳任務是否可重複
       displayOrder: displayOrder,
       rowIndex: i,
       conditionDisplayName: conditionDisplayName, // ✅ 新增：回傳中文條件名稱
@@ -534,15 +569,22 @@ function claimDailyTask(missionId) {
   const profile = {};
   profileHeaders.forEach((key, i) => profile[key] = profileRow[i]);
 
-  const repeatable = getMissionField(mission, "可重複") === "是";
+  // ✅【修正】同時相容舊的中文 "是" 和新的布林值 true。
+  const repeatableValue = getMissionField(mission, "可重複");
+  const repeatable = repeatableValue === '是' || repeatableValue === true;
   const lastClaimed = getMissionField(mission, "LastClaimedDate");
   const type = getMissionField(mission, "類型") || "Daily";
   const today = formatYMD(new Date());
 
+  // ✅【核心修正】無論任務類型為何，只要今天已經領過，就不能再領。
+  // 這修正了「可重複」的成就 (例如連續3天) 在達成後，每天都能重複領取的問題。
+  if (formatYMD(lastClaimed) === today) {
+    throw new Error("⚠️ 此獎勵今日已領取");
+  }
+
   if (type === "Daily" && formatYMD(lastClaimed) === today) {
     throw new Error("⚠️ 今日已領取");
-  }
-  if (type !== "Daily" && lastClaimed && !repeatable) {
+  } else if (type !== "Daily" && lastClaimed && !repeatable) {
     throw new Error("⚠️ 此任務已領取");
   }
 
@@ -567,8 +609,31 @@ function claimDailyTask(missionId) {
   if (colIndex > 0) {
     missionSheet.getRange(missionIndex + 2, colIndex).setValue(today);
   }
+  // ✅【新功能】對於 SustainedStreak，額外記錄領取時的連續天數
+  if (type === 'Achievement' && repeatable && getMissionField(mission, "條件類型") === 'SustainedStreak') {
+      const valueColIndex = missionHeaders.indexOf("LastClaimedValue") + 1;
+      if (valueColIndex > 0) { // 確保欄位存在
+          const skillInfo = getSkillInfoForMission(mission, missionHeaders);
+          missionSheet.getRange(missionIndex + 2, valueColIndex).setValue(skillInfo.streak);
+      }
+  }
 
   return `✅ 已領取 ${getMissionField(mission, "任務名稱")}：${rewardText.trim()}`;
+}
+
+/**
+ * [輔助函式] 根據任務設定，取得對應技能的資訊。
+ */
+function getSkillInfoForMission(missionRow, missionHeaders) {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const skillSheet = ss.getSheetByName("SkillMaster");
+    const skillData = skillSheet.getDataRange().getValues();
+    const skillHeaders = skillData[0];
+    const param = missionRow[missionHeaders.indexOf("條件參數")];
+    const skillId = param.split(":")[0];
+    const skillRow = skillData.find(r => r[skillHeaders.indexOf("SkillID")] === skillId);
+    if (!skillRow) return { streak: 0, totalDone: 0 };
+    return { streak: parseInt(skillRow[skillHeaders.indexOf("StreakCount")] || 0), totalDone: parseInt(skillRow[skillHeaders.indexOf("TotalDoneCount")] || 0) };
 }
 
 
@@ -1146,26 +1211,15 @@ function useItem(itemID, quantity) {
   // 3. 處理一般消耗品 (Consumable)
   // ----------------------------------------------------------------
   else {
-    // 這是一般消耗品，套用效果
+    // ✅【優化】這是一般消耗品，改為呼叫 applyRewards 統一處理效果
     const effectJson = itemMaster.Effect || '{}';
     try {
       const effects = JSON.parse(effectJson);
-      Object.entries(effects).forEach(([field, value]) => {
-        // ✅ 新增：處理 "All" 這個特殊關鍵字
-        if (field === 'All') {
-          const attributesToBoost = ['Cleanliness', 'Mood', 'Energy', 'Health', 'SelfDiscipline'];
-          const boostValue = parseFloat(value) * quantity;
-          attributesToBoost.forEach(attr => {
-            if (profile.hasOwnProperty(attr)) {
-              profile[attr] = (parseFloat(profile[attr]) || 0) + boostValue;
-            }
-          });
-        } else if (profile.hasOwnProperty(field)) {
-          // 原本的邏輯：處理單一屬性
-          profile[field] = (parseFloat(profile[field]) || 0) + (parseFloat(value) * quantity);
-        }
-      });
-    } catch (e) { /* 忽略錯誤 */ }
+      // 建立一個新的獎勵物件，因為 applyRewards 會處理乘上數量的邏輯
+      applyRewards(profile, effects, `使用道具 - ${itemName}`, quantity);
+    } catch (e) {
+      throw new Error(`❌ 無法解析消耗品 [${itemName}] 的效果設定 (Effect): ${e.message}`);
+    }
   }
 
   if (count - quantity <= 0) {
@@ -1191,7 +1245,7 @@ function useItem(itemID, quantity) {
       profileData: getQuickStatus()
     };
   } else {
-    writeProfile(profile, `使用道具 - ${itemName}`);
+    // writeProfile 的呼叫已移至 applyRewards 內部，此處無需再呼叫
     // ✅ 修正：回傳結構化資料
     return {
       message: `✅ 已使用 ${itemName} x${quantity}！`,
@@ -1868,9 +1922,10 @@ function grantItemsToInventory(itemsToAdd) {
  * @param {object} profile - 玩家的 profile 物件 (會被直接修改)。
  * @param {object} rewards - 原始獎勵物件，例如 { "Coins": 100, "Health": 5 }。
  * @param {string} source - 獎勵來源的文字描述，用於日誌記錄。
+ * @param {number} [multiplier=1] - 獎勵的倍率，主要用於批次使用道具。
  * @returns {{finalRewards: object, message: string}} - 包含最終獎勵值和描述訊息的物件。
  */
-function applyRewards(profile, rewards, source) {
+function applyRewards(profile, rewards, source, multiplier = 1) {
   // ✅ 新增：準備回傳給前端的懲罰資訊
   let penaltyInfo = null;
   const activeStatuses = evaluateStatusRules(profile);
@@ -1893,7 +1948,7 @@ function applyRewards(profile, rewards, source) {
     const itemsToAdd = {};
     rewards.Items.forEach(item => {
       if (item.ItemID && item.Quantity > 0) {
-        itemsToAdd[item.ItemID] = (itemsToAdd[item.ItemID] || 0) + parseInt(item.Quantity);
+        itemsToAdd[item.ItemID] = (itemsToAdd[item.ItemID] || 0) + (parseInt(item.Quantity) * multiplier);
       }
     });
     if (Object.keys(itemsToAdd).length > 0) {
@@ -1905,7 +1960,7 @@ function applyRewards(profile, rewards, source) {
   // --- 2. 處理數值獎勵 (金幣、屬性等) ---
   Object.entries(rewards).forEach(([field, value]) => {
     if (field === 'Items') return; // 忽略道具陣列，前面已處理
-    let finalValue = parseFloat(value) || 0;
+    let finalValue = (parseFloat(value) || 0) * multiplier;
 
     // 只對非道具的獎勵套用加成
     if (profile.hasOwnProperty(field)) {
@@ -1919,12 +1974,11 @@ function applyRewards(profile, rewards, source) {
         finalValue *= (1 + (effectsSummary.honorBonus / 100));
       }
 
-      // ✅【核心修正】只對金幣進行四捨五入，其他屬性保留小數點
+      // ✅【核心修正】不再對非金幣的屬性進行四捨五入。
+      // 這樣即使單次獎勵因懲罰而變得非常小 (例如 0.004)，也能被正確累加至後端資料庫，避免玩家的努力因為四捨五入而被抹消。
+      // 最終顯示給玩家時，會由前端的 formatAttr() 函式處理顯示格式。
       if (field === 'Coins') {
         finalValue = Math.round(finalValue);
-      } else {
-        // 保留到小數點後兩位
-        finalValue = Math.round(finalValue * 100) / 100;
       }
 
       // 更新 profile

@@ -1226,7 +1226,16 @@ function renderRecentLog(logs) {
   }
 }
 function formatAttr(val) {
-  return Math.round(parseFloat(val) || 0);
+  // ✅【新修正】顯示到小數點後一位，讓玩家能即時看到小數點獎勵。
+  const num = parseFloat(val) || 0;
+  // 使用 toFixed(1) 來四捨五入到小數點後一位
+  const fixedNumStr = num.toFixed(1);
+  // 如果數字是整數 (例如 10.0)，則只顯示整數部分 "10"
+  if (fixedNumStr.endsWith('.0')) {
+    return Math.floor(num);
+  }
+  // 否則顯示帶有小數點的字串，例如 "10.1"
+  return fixedNumStr;
 }
 
 function showToast(message, duration = 3000) {
@@ -1891,8 +1900,11 @@ function confirmUse() {
   const qty = Math.min(pendingUseMax, Math.max(1, parseInt(document.getElementById('confirm-use-qty').value) || 1));
   const itemType = document.getElementById('confirm-use-modal').dataset.itemType; // 從 modal 讀取類型
 
+  // ✅【Bug 2 修正】只有在開啟寶箱且數量大於等於 10 時，才啟用可能觸發保底的邏輯 (isPurchase=true)
+  // 雖然 isPurchase 字面上是「購買」，但它在後端同時被用來觸發十連抽保底。
+  // 此處確保單抽或少量抽獎 (1-9) 時，isPurchase 必定為 false。
   if (itemType === 'TreasureChest') {
-    playChestAnimationAndOpen(qty, pendingUseItemID, false);
+    playChestAnimationAndOpen(qty, pendingUseItemID, qty >= 10);
   } else {
     useItem(pendingUseItemID, qty);
   }
@@ -2207,7 +2219,14 @@ function playChestAnimationAndOpen(quantity, itemID, isPurchase = false) {
   const img = document.getElementById('chest-animation-img');
   const text = document.getElementById('chest-opening-text');
 
-  text.innerText = quantity === 1 ? '正在開啟寶箱...' : '正在進行十連抽...';
+  // ✅【修正】根據開啟數量顯示正確的提示文字，避免開啟 2-9 個時也顯示「十連抽」
+  if (quantity >= 10) {
+    text.innerText = '正在進行十連抽...';
+  } else if (quantity > 1) {
+    text.innerText = `正在開啟 ${quantity} 個寶箱...`;
+  } else {
+    text.innerText = '正在開啟寶箱...';
+  }
   modal.classList.remove('hidden');
   img.classList.add('shake');
   

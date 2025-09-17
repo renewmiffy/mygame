@@ -770,10 +770,20 @@
         const honor = parseInt(document.getElementById('ach-reward-honor').value);
         if (honor > 0) rewardObject.HonorPoints = honor;
         const items = [];
-        document.querySelectorAll('#ach-reward-items-list .added-item').forEach(itemDiv => {
-          items.push({ ItemID: itemDiv.dataset.itemId, Quantity: parseInt(itemDiv.dataset.quantity) });
+        const itemElements = document.querySelectorAll('#ach-reward-items-list .added-item');
+        itemElements.forEach(itemDiv => {
+          items.push({
+            ItemID: itemDiv.dataset.itemId,
+            Quantity: parseInt(itemDiv.dataset.quantity)
+          });
         });
-        if (items.length > 0) rewardObject.Items = items;
+
+        // ✅【Bug 1 修正】如果只有單一種類的道具，確保它被包裝在一個陣列中
+        // 這能強制後端使用處理多道具的邏輯，從而正確堆疊物品
+        if (items.length > 0) {
+          rewardObject.Items = items;
+        }
+
         const rewardJson = Object.keys(rewardObject).length > 0 ? JSON.stringify(rewardObject) : "";
 
         google.script.run
@@ -903,23 +913,34 @@
         const nameInputId = `name-input-${taskType}-${taskId}`;
         const nameEditorHtml = `
             <div class="editable-field">
-                <label>任務名稱</label>
-                <input type="text" id="${nameInputId}" value="${taskName}">
-                <span style="color: #888; font-size: 0.9em; white-space: nowrap;">(ID: ${taskId})</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 15px;">
+                    <div style="flex-grow: 1;">
+                        <label>任務名稱</label>
+                        <input type="text" id="${nameInputId}" value="${taskName}">
+                    </div>
+                    <div style="flex-shrink: 0; white-space: nowrap;">
+                        <label>ID</label>
+                        <span style="font-size: 1.1em; color: #888; padding: 8px; display: inline-block;">${taskId}</span>
+                    </div>
+                </div>
             </div>
         `;
 
         // ✅ 新增：任務條件編輯區塊 (僅限 MissionCenter)
         let conditionEditorHtml = '';
+        // ✅ 新增：可重複選項 (僅限 MissionCenter)
+        let repeatableCheckboxHtml = '';
         if (taskType === 'mission') {
           // ✅【核心修正】定義要在 UI 上顯示的條件類型，移除重複的 SkillStreak
-          const displayConditionTypes = ['DailyTaskDoneCount', 'SkillsLearnedTodayCount', 'TaskDoneToday', 'TaskDoneCount', 'TotalDoneCount', 'StreakCount'];
+          // ✅【修正】新增「持續連續天數獎勵」到選項中
+          const displayConditionTypes = ['DailyTaskDoneCount', 'SkillsLearnedTodayCount', 'TaskDoneToday', 'TaskDoneCount', 'TotalDoneCount', 'StreakCount', 'SustainedStreak'];
           
           // 建立中文名稱對照表
           const conditionTypeMap = {
             'DailyTaskDoneCount': '每日任務完成數', 'SkillsLearnedTodayCount': '今日學習技能數',
             'TaskDoneToday': '完成指定日常', 'TaskDoneCount': '指定日常總次數',
-            'TotalDoneCount': '指定學習總次數', 'StreakCount': '指定學習連續天數'
+            'TotalDoneCount': '指定學習總次數', 'StreakCount': '指定學習連續天數',
+            'SustainedStreak': '持續連續天數獎勵' // ✅【修正】新增對應的中文名稱
           };
 
           // ✅【核心修正】為了相容舊資料，將 'SkillStreak' 視為 'StreakCount' 來選中正確選項
@@ -927,13 +948,20 @@
 
           // 產生下拉選單的 HTML
           const optionsHtml = displayConditionTypes.map(ct => `<option value="${ct}" ${selectedConditionType === ct ? 'selected' : ''}>${conditionTypeMap[ct] || ct}</option>`).join('');
-          const paramEditorHtml = generateConditionParamHtml(task.conditionType, task.conditionParam);
+          const paramEditorHtml = generateConditionParamHtml(selectedConditionType, task.conditionParam);
           conditionEditorHtml = `
             <div class="editable-field">
               <label>觸發條件</label>
               <select id="condition-type-${taskId}" onchange="updateConditionEditor(this, '${taskId}')">${optionsHtml}</select>
             </div>
             <div id="condition-param-editor-${taskId}">${paramEditorHtml}</div>
+          `;
+
+          // ✅ 新增：可重複選項的 HTML
+          repeatableCheckboxHtml = `
+            <div class="editable-field" style="margin-top: 10px;">
+              <label><input type="checkbox" id="repeatable-${taskId}" ${task.repeatable ? 'checked' : ''} style="width: auto; margin-right: 8px;">可重複 (當中斷後可再次觸發)</label>
+            </div>
           `;
         }
 
@@ -942,6 +970,7 @@
               ${nameEditorHtml}
               ${conditionEditorHtml}
               <hr style="border: none; border-top: 1px solid #eee; margin: 15px 0;">
+              ${repeatableCheckboxHtml}
               <div id="${editorId}">${renderRewardEditor(rewards)}</div>
               <div class="task-actions">
                 <button class="btn-add-reward" onclick="addRewardRow('${editorId}', 'attribute')">＋ 新增屬性</button>
@@ -1056,6 +1085,13 @@
           } else {
             updatedData['條件參數'] = ''; // 如果沒有任何輸入，確保傳送空字串
           }
+
+          // ✅ 新增：儲存「可重複」選項
+          const repeatableCheckbox = document.getElementById(`repeatable-${taskId}`);
+          if (repeatableCheckbox) {
+            // ✅【修正】將儲存的值從中文 "是" 改為布林值 true/false，以符合標準實踐。
+            updatedData['可重複'] = repeatableCheckbox.checked;
+          }
         }
 
         showToast('正在儲存變更...');
@@ -1112,7 +1148,21 @@
       function updateConditionEditor(selectElement, taskId) {
         const selectedType = selectElement.value;
         const container = document.getElementById(`condition-param-editor-${taskId}`);
-        container.innerHTML = generateConditionParamHtml(selectedType, ''); // 傳入空參數以產生預設介面
+        container.innerHTML = generateConditionParamHtml(selectedType, '');
+
+        // ✅ 新增：根據選擇的條件，自動設定「可重複」
+        const repeatableCheckbox = document.getElementById(`repeatable-${taskId}`);
+        if (repeatableCheckbox) {
+            // 定義哪些條件類型預設是可重複的
+            const repeatableConditions = [
+                'StreakCount',           // 連續天數 (中斷後可重來)
+                'SustainedStreak',       // 持續連續獎勵 (本質就是重複)
+                'DailyTaskDoneCount',    // 每日任務完成數 (每日重置)
+                'SkillsLearnedTodayCount', // 今日學習技能數 (每日重置)
+                'TaskDoneToday'          // 完成指定日常 (每日重置)
+            ];
+            repeatableCheckbox.checked = repeatableConditions.includes(selectedType);
+        }
       }
 
       /**
@@ -1140,6 +1190,7 @@
 
           case 'TaskDoneCount':
           case 'TotalDoneCount':
+          case 'SustainedStreak': // ✅【核心修正】將 SustainedStreak 加入此 case，確保它能顯示技能選擇欄位
           case 'StreakCount':
           case 'SkillStreak': // ✅【核心修正】相容舊的 SkillStreak 條件類型
             // ✅【核心修正】對於 "ID:Value" 格式的條件，正確解析
@@ -1148,7 +1199,7 @@
             paramValue = parts.length > 1 ? parts[1] : '';
 
             // ✅【核心修正】更精準地判斷條件類型是針對「技能」還是「日常任務」
-            const isSkill = (conditionType === 'TotalDoneCount' || conditionType === 'StreakCount' || conditionType === 'SkillStreak');
+            const isSkill = (conditionType === 'TotalDoneCount' || conditionType === 'StreakCount' || conditionType === 'SkillStreak' || conditionType === 'SustainedStreak');
             const sourceList = isSkill ? (window.ALL_SKILLS || []) : (window.ALL_DAILY_TASKS || []); // TaskDoneCount 會落入此處
             const idField = isSkill ? 'SkillID' : 'id';
             const nameField = isSkill ? 'SkillName' : 'name';
@@ -1160,8 +1211,9 @@
                   <select data-editor="param-id">${options}</select>
               </div>
               <div class="editable-field">
-                  <label>目標次數</label>
-                  <input type="number" data-editor="param-value" value="${paramValue || 1}" min="1">
+                  <!-- ✅【修正】根據條件類型顯示不同的標籤和預設值 -->
+                  <label>${conditionType === 'SustainedStreak' ? '基礎天數' : '目標次數'}</label>
+                  <input type="number" data-editor="param-value" value="${paramValue || (conditionType === 'SustainedStreak' ? 30 : 1)}" min="1">
               </div>`;
             break;
 
